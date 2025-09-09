@@ -1,0 +1,15 @@
+version: v2
+
+# > buf generate
+managed:
+  enabled: true
+  override:
+    - file_option: go_package
+      path: market.proto
+      value: github.com/sujine/market-fetcher/proto;market
+
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: .
+    opt:
+      - paths=source_relative

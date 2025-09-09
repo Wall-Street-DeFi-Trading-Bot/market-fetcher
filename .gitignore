@@ -1,0 +1,25 @@
+# 빌드 산출물
+/dist/
+/build/
+/out/
+market-fetcher
+
+# 의존성
+/node_modules/
+/vendor/
+
+# environment variable
+.env
+*.env
+
+# OS/IDE
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# log
+*.log
+/logs
+
+/nats-data

@@ -1,0 +1,97 @@
+// marketdata_v2.proto
+syntax = "proto3";
+
+package md;
+option go_package = "github.com/sujine/market-fetcher/proto/md";
+
+// ---- Enums ----
+enum Venue {
+  VENUE_UNSPECIFIED = 0;
+  VENUE_CEX = 1;
+  VENUE_DEX = 2;
+}
+
+enum Instrument {
+  INSTRUMENT_UNSPECIFIED = 0;
+  INSTRUMENT_SPOT = 1;
+  INSTRUMENT_PERPETUAL = 2;
+  INSTRUMENT_SWAP = 3;
+  INSTRUMENT_OPTION = 4; // reserved for future use
+}
+
+enum Aggressor {
+  AGGR_UNKNOWN = 0;
+  AGGR_BUY = 1;
+  AGGR_SELL = 2;
+}
+
+// ---- Common header ----
+message Header {
+  // Exchange identifier: e.g. "Binance", "PancakeSwapV3"
+  string exchange = 1;
+
+  // Unified symbol: e.g. "ETHUSDT", "BNB-USDT" (keep your house-style)
+  string symbol = 2;
+
+  Venue venue = 3;
+  Instrument instrument = 4;
+
+  // Monotonic-ish, event emission time in ns (UTC).
+  int64 ts_ns = 5;
+
+  // Schema version for the event family (bump when breaking).
+  uint32 schema_version = 6;
+
+  // Optional chain context for DEX (e.g., "BSC"), else empty.
+  string chain = 7;
+
+  // Optional: raw pool address for DEX tick source.
+  string pool_address = 8;
+}
+
+// ---- Normalized events ----
+message TickL1 {
+  // Best bid/ask. If not available (DEX mark-only), set bid/ask = 0 and use mid.
+  double bid = 1;
+  double ask = 2;
+  double mid = 3;
+
+  // Optional size at best.
+  double bid_size = 4;
+  double ask_size = 5;
+
+  // Optional auxiliary metrics.
+  double twap = 10;     // DEX short-window twap if computed, else 0
+  double liquidity = 11; // DEX liquidity approximation if available, else 0
+}
+
+message Funding {
+  double mark_price = 1;
+  double index_price = 2;
+  double estimated_settle_price = 3;
+  double funding_rate = 4;         // per-period rate (e.g., 8h)
+  int64  next_funding_time = 5;    // ms since epoch (exchange native)
+}
+
+message Fee {
+  double maker_rate = 1; // ratio (e.g., 0.001)
+  double taker_rate = 2; // ratio
+}
+
+message Trade {
+  double price = 1;
+  double size = 2;
+  Aggressor aggressor = 3;
+}
+
+// ---- Envelope ----
+message MarketData {
+  Header header = 1;
+
+  oneof data {
+    TickL1 tick = 10;
+    Funding funding = 11;
+    Fee fee = 12;
+    Trade trade = 13;
+  }
+}

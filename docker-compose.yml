@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  nats:
+    image: nats:latest # 최신 버전 권장
+    container_name: nats-js
+    command: [
+        "-js", # JetStream 활성화
+        "-sd",
+        "/data/jetstream", # JetStream 저장 경로
+        "-m",
+        "8222", # HTTP 모니터링 포트 (optional)
+        "-DV", # 디버그/추적 로그 (optional)
+      ]
+    ports:
+      - "4222:4222" # NATS client port
+      - "8222:8222" # monitoring UI (http://localhost:8222)
+    volumes:
+      - ./nats-data:/data/jetstream
