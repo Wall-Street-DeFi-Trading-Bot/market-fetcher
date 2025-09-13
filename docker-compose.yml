@@ -11,6 +11,7 @@ services:
         "-m",
         "8222", # HTTP 모니터링 포트 (optional)
         "-DV", # 디버그/추적 로그 (optional)
+        "-V",
       ]
     ports:
       - "4222:4222" # NATS client port
