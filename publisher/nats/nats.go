@@ -124,40 +124,43 @@ func (p *Publisher) publish(subject string, evt proto.Message) error {
 // subjectFor builds the subject based on data kind and header fields.
 // md.<kind>.<venue>.<exchange>[.<chain>].<symbol>.<instrument>
 func subjectFor(evt *pb.MarketData) (string, error) {
-	h := evt.Header
-	if h.Exchange == "" || h.Symbol == "" {
-		return "", fmt.Errorf("missing exchange/symbol")
-	}
+    h := evt.Header
+    if h.Exchange == "" || h.Symbol == "" {
+        return "", fmt.Errorf("missing exchange/symbol")
+    }
 
-	kind := "" // tick | funding | fee | trade
-	switch evt.Data.(type) {
-	case *pb.MarketData_Tick:
-		kind = "tick"
-	case *pb.MarketData_Funding:
-		kind = "funding"
-	case *pb.MarketData_Fee:
-		kind = "fee"
-	case *pb.MarketData_Trade:
-		kind = "trade"
-	default:
-		return "", fmt.Errorf("unknown MarketData kind")
-	}
+    kind := ""
+    switch evt.Data.(type) {
+    case *pb.MarketData_Tick:
+        kind = "tick"
+    case *pb.MarketData_DexSwapL1:
+        kind = "tick"
+    case *pb.MarketData_Funding:
+        kind = "funding"
+    case *pb.MarketData_Fee:
+        kind = "fee"
+    case *pb.MarketData_Trade:
+        kind = "trade"
+    case *pb.MarketData_Stats:
+        kind = "stats"
+    case *pb.MarketData_Slippage:
+        kind = "slippage"
+    default:
+        return "", fmt.Errorf("unknown MarketData kind")
+    }
 
-	venue := lower(strings.TrimPrefix(h.Venue.String(), "VENUE_")) // cex|dex|unspecified
-	inst := lower(strings.TrimPrefix(h.Instrument.String(), "INSTRUMENT_"))
-	if venue == "" {
-		venue = "unspecified"
-	}
-	if inst == "" {
-		inst = "unspecified"
-	}
+    venue := lower(strings.TrimPrefix(h.Venue.String(), "VENUE_"))        // cex|dex|unspecified
+    inst  := lower(strings.TrimPrefix(h.Instrument.String(), "INSTRUMENT_")) // spot|perpetual|swap|...
+    if venue == "" { venue = "unspecified" }
+    if inst  == "" { inst  = "unspecified" }
 
-	parts := []string{"md", kind, venue, h.Exchange}
-	if ch := strings.TrimSpace(h.Chain); ch != "" {
-		parts = append(parts, ch)
-	}
-	parts = append(parts, h.Symbol, inst)
-	return strings.Join(parts, "."), nil
+    parts := []string{"md", kind, venue, h.Exchange}
+    if ch := strings.TrimSpace(h.Chain); ch != "" {
+        parts = append(parts, ch) // <- 헤더에 Chain 넣으면 주제에 포함됨
+    }
+    parts = append(parts, h.Symbol, inst)
+    return strings.Join(parts, "."), nil
 }
+
 
 func lower(s string) string { return strings.ToLower(s) }

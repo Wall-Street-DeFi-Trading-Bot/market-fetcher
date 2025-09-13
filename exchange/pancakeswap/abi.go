@@ -1,7 +1,7 @@
 package pancakeswap
 
 
-const poolABIJSON = `[
+const pool3ABIJSON = `[
   {
     "inputs": [],
     "name": "slot0",
@@ -41,6 +41,23 @@ const poolABIJSON = `[
       { "indexed": false, "internalType": "int24",   "name": "tick",          "type": "int24" },
       { "indexed": false, "internalType": "uint128", "name": "protocolFeesToken0", "type": "uint128" },
       { "indexed": false, "internalType": "uint128", "name": "protocolFeesToken1", "type": "uint128" }
+    ],
+    "name": "Swap",
+    "type": "event"
+  }
+]`
+
+
+const pool2ABIJSON = `[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true,  "internalType": "address", "name": "sender", "type": "address" },
+      { "indexed": false, "internalType": "uint256",  "name": "amount0In", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256",  "name": "amount1In", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "amount0Out", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "amount1Out", "type": "uint256" },
+      { "indexed": true,  "internalType": "address", "name": "recipient", "type": "address"}
     ],
     "name": "Swap",
     "type": "event"
@@ -121,3 +138,16 @@ const factoryABIJSON = `[
     "type": "function"
   }
 ]`
+
+
+const v2PairABIJSON = `[
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": false, "internalType": "uint112", "name": "reserve0", "type": "uint112"},
+      {"indexed": false, "internalType": "uint112", "name": "reserve1", "type": "uint112"}
+    ],
+    "name": "Sync", "type": "event"
+  }
+]`
+
