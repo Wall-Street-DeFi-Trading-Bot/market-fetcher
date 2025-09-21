@@ -400,20 +400,17 @@ type DexSwapL1 struct {
 	BlockNumber uint64 `protobuf:"varint,23,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"` // block number
 	Timestamp   uint64 `protobuf:"varint,24,opt,name=timestamp,proto3" json:"timestamp,omitempty"`                        // unix seconds
 	// --- Token metadata (to compute human price) ---
-	Token0         string `protobuf:"bytes,30,opt,name=token0,proto3" json:"token0,omitempty"`                                        // address
-	Token1         string `protobuf:"bytes,31,opt,name=token1,proto3" json:"token1,omitempty"`                                        // address
+	Token0         string `protobuf:"bytes,30,opt,name=token0,proto3" json:"token0,omitempty"`                                        // symbol
+	Token1         string `protobuf:"bytes,31,opt,name=token1,proto3" json:"token1,omitempty"`                                        // symbol
 	Token0Decimals uint32 `protobuf:"varint,32,opt,name=token0_decimals,json=token0Decimals,proto3" json:"token0_decimals,omitempty"` // e.g., 18
 	Token1Decimals uint32 `protobuf:"varint,33,opt,name=token1_decimals,json=token1Decimals,proto3" json:"token1_decimals,omitempty"` // e.g., 18
 	// --- Orientation & computed prices ---
 	// price01 = token1/token0 (pool-native). price_qb = quote/base as requested by the symbol.
 	InvertForQuote bool    `protobuf:"varint,40,opt,name=invert_for_quote,json=invertForQuote,proto3" json:"invert_for_quote,omitempty"` // true if we inverted price01 to form quote/base
-	Price_01       float64 `protobuf:"fixed64,41,opt,name=price_01,json=price01,proto3" json:"price_01,omitempty"`                       // price = (sqrtP/2^96)^2 * 10^(dec0-dec1)
-	Price_10       float64 `protobuf:"fixed64,42,opt,name=price_10,json=price10,proto3" json:"price_10,omitempty"`                       // price after invert if needed (what you publish as “mid”)
-	// Optional sizes (if you derive)
-	SizeBase      float64 `protobuf:"fixed64,50,opt,name=size_base,json=sizeBase,proto3" json:"size_base,omitempty"`    // executed base size in base units (optional)
-	SizeQuote     float64 `protobuf:"fixed64,51,opt,name=size_quote,json=sizeQuote,proto3" json:"size_quote,omitempty"` // executed quote size in quote units (optional)
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Price01        float64 `protobuf:"fixed64,41,opt,name=price01,proto3" json:"price01,omitempty"`                                      // price = (sqrtP/2^96)^2 * 10^(dec0-dec1)
+	Price10        float64 `protobuf:"fixed64,42,opt,name=price10,proto3" json:"price10,omitempty"`                                      // price after invert if needed (what you publish as “mid”)
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *DexSwapL1) Reset() {
@@ -565,56 +562,45 @@ func (x *DexSwapL1) GetInvertForQuote() bool {
 	return false
 }
 
-func (x *DexSwapL1) GetPrice_01() float64 {
+func (x *DexSwapL1) GetPrice01() float64 {
 	if x != nil {
-		return x.Price_01
+		return x.Price01
 	}
 	return 0
 }
 
-func (x *DexSwapL1) GetPrice_10() float64 {
+func (x *DexSwapL1) GetPrice10() float64 {
 	if x != nil {
-		return x.Price_10
+		return x.Price10
 	}
 	return 0
 }
 
-func (x *DexSwapL1) GetSizeBase() float64 {
-	if x != nil {
-		return x.SizeBase
-	}
-	return 0
-}
-
-func (x *DexSwapL1) GetSizeQuote() float64 {
-	if x != nil {
-		return x.SizeQuote
-	}
-	return 0
-}
-
-type DexSlippage struct {
+type Slippage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Impacts       []*DexSlippage_Impact  `protobuf:"bytes,1,rep,name=impacts,proto3" json:"impacts,omitempty"`
-	PoolFeeBps    uint32                 `protobuf:"varint,2,opt,name=pool_fee_bps,json=poolFeeBps,proto3" json:"pool_fee_bps,omitempty"` // e.g., 25 for 0.25%
+	ImpactBps01   float64                `protobuf:"fixed64,1,opt,name=impact_bps01,json=impactBps01,proto3" json:"impact_bps01,omitempty"`
+	ImpactBps10   float64                `protobuf:"fixed64,2,opt,name=impact_bps10,json=impactBps10,proto3" json:"impact_bps10,omitempty"`
+	BlockNumber   uint64                 `protobuf:"varint,3,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
+	TxHash        string                 `protobuf:"bytes,4,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	Timestamp     uint64                 `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DexSlippage) Reset() {
-	*x = DexSlippage{}
+func (x *Slippage) Reset() {
+	*x = Slippage{}
 	mi := &file_market_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DexSlippage) String() string {
+func (x *Slippage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DexSlippage) ProtoMessage() {}
+func (*Slippage) ProtoMessage() {}
 
-func (x *DexSlippage) ProtoReflect() protoreflect.Message {
+func (x *Slippage) ProtoReflect() protoreflect.Message {
 	mi := &file_market_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -626,29 +612,50 @@ func (x *DexSlippage) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DexSlippage.ProtoReflect.Descriptor instead.
-func (*DexSlippage) Descriptor() ([]byte, []int) {
+// Deprecated: Use Slippage.ProtoReflect.Descriptor instead.
+func (*Slippage) Descriptor() ([]byte, []int) {
 	return file_market_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *DexSlippage) GetImpacts() []*DexSlippage_Impact {
+func (x *Slippage) GetImpactBps01() float64 {
 	if x != nil {
-		return x.Impacts
-	}
-	return nil
-}
-
-func (x *DexSlippage) GetPoolFeeBps() uint32 {
-	if x != nil {
-		return x.PoolFeeBps
+		return x.ImpactBps01
 	}
 	return 0
 }
 
-type Stats24H struct {
+func (x *Slippage) GetImpactBps10() float64 {
+	if x != nil {
+		return x.ImpactBps10
+	}
+	return 0
+}
+
+func (x *Slippage) GetBlockNumber() uint64 {
+	if x != nil {
+		return x.BlockNumber
+	}
+	return 0
+}
+
+func (x *Slippage) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+func (x *Slippage) GetTimestamp() uint64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
+type Volume struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	VolumeQuote   float64                `protobuf:"fixed64,1,opt,name=volume_quote,json=volumeQuote,proto3" json:"volume_quote,omitempty"`
-	VolumeBase    float64                `protobuf:"fixed64,2,opt,name=volume_base,json=volumeBase,proto3" json:"volume_base,omitempty"`
+	Volume0       float64                `protobuf:"fixed64,1,opt,name=volume0,proto3" json:"volume0,omitempty"`
+	Volume1       float64                `protobuf:"fixed64,2,opt,name=volume1,proto3" json:"volume1,omitempty"`
 	High          float64                `protobuf:"fixed64,3,opt,name=high,proto3" json:"high,omitempty"`
 	Low           float64                `protobuf:"fixed64,4,opt,name=low,proto3" json:"low,omitempty"`
 	Trades        uint64                 `protobuf:"varint,5,opt,name=trades,proto3" json:"trades,omitempty"`
@@ -656,20 +663,20 @@ type Stats24H struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Stats24H) Reset() {
-	*x = Stats24H{}
+func (x *Volume) Reset() {
+	*x = Volume{}
 	mi := &file_market_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Stats24H) String() string {
+func (x *Volume) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Stats24H) ProtoMessage() {}
+func (*Volume) ProtoMessage() {}
 
-func (x *Stats24H) ProtoReflect() protoreflect.Message {
+func (x *Volume) ProtoReflect() protoreflect.Message {
 	mi := &file_market_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -681,40 +688,40 @@ func (x *Stats24H) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Stats24H.ProtoReflect.Descriptor instead.
-func (*Stats24H) Descriptor() ([]byte, []int) {
+// Deprecated: Use Volume.ProtoReflect.Descriptor instead.
+func (*Volume) Descriptor() ([]byte, []int) {
 	return file_market_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *Stats24H) GetVolumeQuote() float64 {
+func (x *Volume) GetVolume0() float64 {
 	if x != nil {
-		return x.VolumeQuote
+		return x.Volume0
 	}
 	return 0
 }
 
-func (x *Stats24H) GetVolumeBase() float64 {
+func (x *Volume) GetVolume1() float64 {
 	if x != nil {
-		return x.VolumeBase
+		return x.Volume1
 	}
 	return 0
 }
 
-func (x *Stats24H) GetHigh() float64 {
+func (x *Volume) GetHigh() float64 {
 	if x != nil {
 		return x.High
 	}
 	return 0
 }
 
-func (x *Stats24H) GetLow() float64 {
+func (x *Volume) GetLow() float64 {
 	if x != nil {
 		return x.Low
 	}
 	return 0
 }
 
-func (x *Stats24H) GetTrades() uint64 {
+func (x *Volume) GetTrades() uint64 {
 	if x != nil {
 		return x.Trades
 	}
@@ -920,7 +927,7 @@ type MarketData struct {
 	//	*MarketData_Funding
 	//	*MarketData_Fee
 	//	*MarketData_Trade
-	//	*MarketData_Stats
+	//	*MarketData_Volume
 	//	*MarketData_Slippage
 	Data          isMarketData_Data `protobuf_oneof:"data"`
 	unknownFields protoimpl.UnknownFields
@@ -1016,16 +1023,16 @@ func (x *MarketData) GetTrade() *Trade {
 	return nil
 }
 
-func (x *MarketData) GetStats() *Stats24H {
+func (x *MarketData) GetVolume() *Volume {
 	if x != nil {
-		if x, ok := x.Data.(*MarketData_Stats); ok {
-			return x.Stats
+		if x, ok := x.Data.(*MarketData_Volume); ok {
+			return x.Volume
 		}
 	}
 	return nil
 }
 
-func (x *MarketData) GetSlippage() *DexSlippage {
+func (x *MarketData) GetSlippage() *Slippage {
 	if x != nil {
 		if x, ok := x.Data.(*MarketData_Slippage); ok {
 			return x.Slippage
@@ -1058,12 +1065,12 @@ type MarketData_Trade struct {
 	Trade *Trade `protobuf:"bytes,14,opt,name=trade,proto3,oneof"`
 }
 
-type MarketData_Stats struct {
-	Stats *Stats24H `protobuf:"bytes,15,opt,name=stats,proto3,oneof"`
+type MarketData_Volume struct {
+	Volume *Volume `protobuf:"bytes,15,opt,name=volume,proto3,oneof"`
 }
 
 type MarketData_Slippage struct {
-	Slippage *DexSlippage `protobuf:"bytes,16,opt,name=slippage,proto3,oneof"`
+	Slippage *Slippage `protobuf:"bytes,16,opt,name=slippage,proto3,oneof"`
 }
 
 func (*MarketData_Tick) isMarketData_Data() {}
@@ -1076,61 +1083,9 @@ func (*MarketData_Fee) isMarketData_Data() {}
 
 func (*MarketData_Trade) isMarketData_Data() {}
 
-func (*MarketData_Stats) isMarketData_Data() {}
+func (*MarketData_Volume) isMarketData_Data() {}
 
 func (*MarketData_Slippage) isMarketData_Data() {}
-
-type DexSlippage_Impact struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SizeQuote     float64                `protobuf:"fixed64,1,opt,name=size_quote,json=sizeQuote,proto3" json:"size_quote,omitempty"`
-	ImpactBps     float64                `protobuf:"fixed64,2,opt,name=impact_bps,json=impactBps,proto3" json:"impact_bps,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DexSlippage_Impact) Reset() {
-	*x = DexSlippage_Impact{}
-	mi := &file_market_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DexSlippage_Impact) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DexSlippage_Impact) ProtoMessage() {}
-
-func (x *DexSlippage_Impact) ProtoReflect() protoreflect.Message {
-	mi := &file_market_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DexSlippage_Impact.ProtoReflect.Descriptor instead.
-func (*DexSlippage_Impact) Descriptor() ([]byte, []int) {
-	return file_market_proto_rawDescGZIP(), []int{3, 0}
-}
-
-func (x *DexSlippage_Impact) GetSizeQuote() float64 {
-	if x != nil {
-		return x.SizeQuote
-	}
-	return 0
-}
-
-func (x *DexSlippage_Impact) GetImpactBps() float64 {
-	if x != nil {
-		return x.ImpactBps
-	}
-	return 0
-}
 
 var File_market_proto protoreflect.FileDescriptor
 
@@ -1156,7 +1111,7 @@ const file_market_proto_rawDesc = "" +
 	"\bask_size\x18\x05 \x01(\x01R\aaskSize\x12\x12\n" +
 	"\x04twap\x18\n" +
 	" \x01(\x01R\x04twap\x12\x1c\n" +
-	"\tliquidity\x18\v \x01(\x01R\tliquidity\"\xad\x05\n" +
+	"\tliquidity\x18\v \x01(\x01R\tliquidity\"\xef\x04\n" +
 	"\tDexSwapL1\x12\x18\n" +
 	"\aamount0\x18\x01 \x01(\tR\aamount0\x12\x18\n" +
 	"\aamount1\x18\x02 \x01(\tR\aamount1\x12$\n" +
@@ -1175,25 +1130,18 @@ const file_market_proto_rawDesc = "" +
 	"\x06token1\x18\x1f \x01(\tR\x06token1\x12'\n" +
 	"\x0ftoken0_decimals\x18  \x01(\rR\x0etoken0Decimals\x12'\n" +
 	"\x0ftoken1_decimals\x18! \x01(\rR\x0etoken1Decimals\x12(\n" +
-	"\x10invert_for_quote\x18( \x01(\bR\x0einvertForQuote\x12\x19\n" +
-	"\bprice_01\x18) \x01(\x01R\aprice01\x12\x19\n" +
-	"\bprice_10\x18* \x01(\x01R\aprice10\x12\x1b\n" +
-	"\tsize_base\x182 \x01(\x01R\bsizeBase\x12\x1d\n" +
-	"\n" +
-	"size_quote\x183 \x01(\x01R\tsizeQuote\"\xa9\x01\n" +
-	"\vDexSlippage\x120\n" +
-	"\aimpacts\x18\x01 \x03(\v2\x16.md.DexSlippage.ImpactR\aimpacts\x12 \n" +
-	"\fpool_fee_bps\x18\x02 \x01(\rR\n" +
-	"poolFeeBps\x1aF\n" +
-	"\x06Impact\x12\x1d\n" +
-	"\n" +
-	"size_quote\x18\x01 \x01(\x01R\tsizeQuote\x12\x1d\n" +
-	"\n" +
-	"impact_bps\x18\x02 \x01(\x01R\timpactBps\"\x8c\x01\n" +
-	"\bStats24h\x12!\n" +
-	"\fvolume_quote\x18\x01 \x01(\x01R\vvolumeQuote\x12\x1f\n" +
-	"\vvolume_base\x18\x02 \x01(\x01R\n" +
-	"volumeBase\x12\x12\n" +
+	"\x10invert_for_quote\x18( \x01(\bR\x0einvertForQuote\x12\x18\n" +
+	"\aprice01\x18) \x01(\x01R\aprice01\x12\x18\n" +
+	"\aprice10\x18* \x01(\x01R\aprice10\"\xaa\x01\n" +
+	"\bSlippage\x12!\n" +
+	"\fimpact_bps01\x18\x01 \x01(\x01R\vimpactBps01\x12!\n" +
+	"\fimpact_bps10\x18\x02 \x01(\x01R\vimpactBps10\x12!\n" +
+	"\fblock_number\x18\x03 \x01(\x04R\vblockNumber\x12\x17\n" +
+	"\atx_hash\x18\x04 \x01(\tR\x06txHash\x12\x1c\n" +
+	"\ttimestamp\x18\x05 \x01(\x04R\ttimestamp\"z\n" +
+	"\x06Volume\x12\x18\n" +
+	"\avolume0\x18\x01 \x01(\x01R\avolume0\x12\x18\n" +
+	"\avolume1\x18\x02 \x01(\x01R\avolume1\x12\x12\n" +
 	"\x04high\x18\x03 \x01(\x01R\x04high\x12\x10\n" +
 	"\x03low\x18\x04 \x01(\x01R\x03low\x12\x16\n" +
 	"\x06trades\x18\x05 \x01(\x04R\x06trades\"\xce\x01\n" +
@@ -1213,7 +1161,7 @@ const file_market_proto_rawDesc = "" +
 	"\x05Trade\x12\x14\n" +
 	"\x05price\x18\x01 \x01(\x01R\x05price\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x01R\x04size\x12+\n" +
-	"\taggressor\x18\x03 \x01(\x0e2\r.md.AggressorR\taggressor\"\xc7\x02\n" +
+	"\taggressor\x18\x03 \x01(\x0e2\r.md.AggressorR\taggressor\"\xc4\x02\n" +
 	"\n" +
 	"MarketData\x12\"\n" +
 	"\x06header\x18\x01 \x01(\v2\n" +
@@ -1225,8 +1173,9 @@ const file_market_proto_rawDesc = "" +
 	"\afunding\x18\f \x01(\v2\v.md.FundingH\x00R\afunding\x12\x1b\n" +
 	"\x03fee\x18\r \x01(\v2\a.md.FeeH\x00R\x03fee\x12!\n" +
 	"\x05trade\x18\x0e \x01(\v2\t.md.TradeH\x00R\x05trade\x12$\n" +
-	"\x05stats\x18\x0f \x01(\v2\f.md.Stats24hH\x00R\x05stats\x12-\n" +
-	"\bslippage\x18\x10 \x01(\v2\x0f.md.DexSlippageH\x00R\bslippageB\x06\n" +
+	"\x06volume\x18\x0f \x01(\v2\n" +
+	".md.VolumeH\x00R\x06volume\x12*\n" +
+	"\bslippage\x18\x10 \x01(\v2\f.md.SlippageH\x00R\bslippageB\x06\n" +
 	"\x04data*<\n" +
 	"\x05Venue\x12\x15\n" +
 	"\x11VENUE_UNSPECIFIED\x10\x00\x12\r\n" +
@@ -1258,40 +1207,38 @@ func file_market_proto_rawDescGZIP() []byte {
 }
 
 var file_market_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_market_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_market_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_market_proto_goTypes = []any{
-	(Venue)(0),                 // 0: md.Venue
-	(Instrument)(0),            // 1: md.Instrument
-	(Aggressor)(0),             // 2: md.Aggressor
-	(*Header)(nil),             // 3: md.Header
-	(*TickL1)(nil),             // 4: md.TickL1
-	(*DexSwapL1)(nil),          // 5: md.DexSwapL1
-	(*DexSlippage)(nil),        // 6: md.DexSlippage
-	(*Stats24H)(nil),           // 7: md.Stats24h
-	(*Funding)(nil),            // 8: md.Funding
-	(*Fee)(nil),                // 9: md.Fee
-	(*Trade)(nil),              // 10: md.Trade
-	(*MarketData)(nil),         // 11: md.MarketData
-	(*DexSlippage_Impact)(nil), // 12: md.DexSlippage.Impact
+	(Venue)(0),         // 0: md.Venue
+	(Instrument)(0),    // 1: md.Instrument
+	(Aggressor)(0),     // 2: md.Aggressor
+	(*Header)(nil),     // 3: md.Header
+	(*TickL1)(nil),     // 4: md.TickL1
+	(*DexSwapL1)(nil),  // 5: md.DexSwapL1
+	(*Slippage)(nil),   // 6: md.Slippage
+	(*Volume)(nil),     // 7: md.Volume
+	(*Funding)(nil),    // 8: md.Funding
+	(*Fee)(nil),        // 9: md.Fee
+	(*Trade)(nil),      // 10: md.Trade
+	(*MarketData)(nil), // 11: md.MarketData
 }
 var file_market_proto_depIdxs = []int32{
 	0,  // 0: md.Header.venue:type_name -> md.Venue
 	1,  // 1: md.Header.instrument:type_name -> md.Instrument
-	12, // 2: md.DexSlippage.impacts:type_name -> md.DexSlippage.Impact
-	2,  // 3: md.Trade.aggressor:type_name -> md.Aggressor
-	3,  // 4: md.MarketData.header:type_name -> md.Header
-	4,  // 5: md.MarketData.tick:type_name -> md.TickL1
-	5,  // 6: md.MarketData.dexSwapL1:type_name -> md.DexSwapL1
-	8,  // 7: md.MarketData.funding:type_name -> md.Funding
-	9,  // 8: md.MarketData.fee:type_name -> md.Fee
-	10, // 9: md.MarketData.trade:type_name -> md.Trade
-	7,  // 10: md.MarketData.stats:type_name -> md.Stats24h
-	6,  // 11: md.MarketData.slippage:type_name -> md.DexSlippage
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	2,  // 2: md.Trade.aggressor:type_name -> md.Aggressor
+	3,  // 3: md.MarketData.header:type_name -> md.Header
+	4,  // 4: md.MarketData.tick:type_name -> md.TickL1
+	5,  // 5: md.MarketData.dexSwapL1:type_name -> md.DexSwapL1
+	8,  // 6: md.MarketData.funding:type_name -> md.Funding
+	9,  // 7: md.MarketData.fee:type_name -> md.Fee
+	10, // 8: md.MarketData.trade:type_name -> md.Trade
+	7,  // 9: md.MarketData.volume:type_name -> md.Volume
+	6,  // 10: md.MarketData.slippage:type_name -> md.Slippage
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_market_proto_init() }
@@ -1305,7 +1252,7 @@ func file_market_proto_init() {
 		(*MarketData_Funding)(nil),
 		(*MarketData_Fee)(nil),
 		(*MarketData_Trade)(nil),
-		(*MarketData_Stats)(nil),
+		(*MarketData_Volume)(nil),
 		(*MarketData_Slippage)(nil),
 	}
 	type x struct{}
@@ -1314,7 +1261,7 @@ func file_market_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_market_proto_rawDesc), len(file_market_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   10,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
