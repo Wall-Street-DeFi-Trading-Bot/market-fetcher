@@ -1,9 +1,8 @@
 // Package: pancakeswap
-// File: pancakeswap_unified_v2_v3.go
 //
 // Unified collector for PancakeSwap v2+v3 with ZERO duplicated flows.
 // - One subscribe function (subscribePool)
-// - One log handler (handleLog)
+// - One log handler (PublishPrice)
 // - ENV per symbol: DEX_POOLS_<SYMBOL>=v3@0x...,v2@0x...,0x...(raw->v3)
 // - v3 falls back to factory discovery if no v3 in ENV
 // - v2 uses Swap event (NOT Sync) and computes trade price; optionally you can still listen to Sync elsewhere
@@ -21,8 +20,6 @@ import (
 	"log"
 	"math"
 	"math/big"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,158 +35,237 @@ import (
 	"github.com/sujine/market-fetcher/publisher"
 )
 
-// --------- Constants & defaults ---------
-
-const (
-	PANCAKE_V3_FACTORY = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
-	DEFAULT_BSC_WS_URL = "wss://bsc-rpc.publicnode.com"
-	DEFAULT_BSC_HTTP   = "https://bsc-dataseed.binance.org"
-
-	// Common tokens on BSC
-	WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
-	USDT = "0x55d398326f99059fF775485246999027B3197955"
-	WETH = "0x2170ed0880ac9a755fd29b2688956bd959f933f8"
-)
-
-var feeTiers = []uint32{100, 500, 2500, 10000}
-
-// --------- ENV helpers ---------
-
-func envStr(key, def string) string { if v := os.Getenv(key); v != "" { return v }; return def }
-func envInt(key string, def int) int { v := strings.TrimSpace(os.Getenv(key)); if v=="" {return def}; i,err:=strconv.Atoi(v); if err!=nil {return def}; return i }
-func envDurationMS(key string, defMS int) time.Duration { return time.Duration(envInt(key, defMS)) * time.Millisecond }
-
-// --------- Token info (extend as needed) ---------
-
-func getTokenInfoForSymbol(sym string) (t0, t1 common.Address, d0, d1 int, ok bool) {
-	s := strings.ToUpper(strings.TrimSpace(sym))
-	switch s {
-	case "ETHUSDT":
-		return common.HexToAddress(WETH), common.HexToAddress(USDT), 18, 18, true
-	case "WBNBUSDT", "BNBUSDT":
-		return common.HexToAddress(WBNB), common.HexToAddress(USDT), 18, 18, true
-	default:
-		return common.Address{}, common.Address{}, 0, 0, false
-	}
-}
-
-// --------- Pool version & ref ---------
-
 type poolVer uint8
 const (
 	verV2 poolVer = 2
 	verV3 poolVer = 3
 )
 
-type poolRef struct {
-	addr    common.Address
+type poolRef struct {   
+	addr	common.Address
 	ver     poolVer
-	// v2 orientation (for price) — best-effort fetched via token0/token1
-	v2t0, v2t1 common.Address
 	// event id cached (v2: Swap, v3: Swap)
 	eventID common.Hash
+	fee  	uint32
 }
 
 // --------- Collector ---------
 
 type Collector struct {
-	Symbol string
-	Pub    publisher.Nats
+	Symbol 				string
+	Pub    				publisher.Nats
 
-	ws   *ethclient.Client
-	http *ethclient.Client
+	ws   				*ethclient.Client
+	http 				*ethclient.Client
 
-	v3PoolABI    abi.ABI
-	v3FactoryABI abi.ABI
-	v2PairABI    abi.ABI
+	v3PoolABI    		abi.ABI
+	v3FactoryABI 		abi.ABI
+	v2PairABI    		abi.ABI
 
-	mu        sync.RWMutex
-	lastBlock uint64
-	lastIdx   uint
+	mu        			sync.RWMutex
+	lastBlock 			uint64
+	lastIdx   			uint
 
-	token0, token1         common.Address
-	token0Decimals         int
-	token1Decimals         int
-	invertForQuote         bool
+	token0				common.Address
+	token1         		common.Address
+	token0Decimals      int
+	token1Decimals      int
+	invertForQuote      bool
 
-	confirmations uint64
-	logPollEvery  time.Duration
+	pools 				map[common.Address]poolRef
+	exchangeLabelByAddr map[common.Address]string
 
-	pools []poolRef
+	lastSqrtV3 map[common.Address]*big.Int 
+	lastPx     map[common.Address]struct{ p01, p10 float64 }
 }
 
-func New(symbol string, _ []common.Address, pub publisher.Nats) *Collector { // keep signature for backward compat
-	return &Collector{Symbol: strings.ToUpper(symbol), Pub: pub}
+
+func New(symbol string, pub publisher.Nats) *Collector {
+	v3PoolABI, err := abi.JSON(strings.NewReader(pool3ABIJSON))
+    if err != nil { log.Println("v3 pool ABI:", err); return nil }
+
+    v3FactoryABI, err := abi.JSON(strings.NewReader(pancakeV3FactoryABI))
+    if err != nil { log.Println("v3 factory ABI:", err); return nil }
+
+    v2PairABI, err := abi.JSON(strings.NewReader(pool2ABIJSON))
+    if err != nil { log.Println("v2 pair ABI:", err); return nil }
+
+	return &Collector{
+		Symbol: symbol,
+		v3PoolABI: v3PoolABI,
+		v3FactoryABI: v3FactoryABI,
+		v2PairABI: v2PairABI,
+		Pub: pub,
+		pools:  make(map[common.Address]poolRef),
+		exchangeLabelByAddr: make(map[common.Address]string),
+		lastSqrtV3: make(map[common.Address]*big.Int),
+		lastPx:     make(map[common.Address]struct{ p01, p10 float64 }),
+	}
 }
 func (c *Collector) Name() string  { return "PancakeSwap(" + c.Symbol + ")" }
 func (c *Collector) Venue() string { return "dex" }
 
 func (c *Collector) Run(ctx context.Context) error {
-	// cfg
-	wsURL := envStr("BSC_WS_URL", DEFAULT_BSC_WS_URL)
-	httpURL := envStr("BSC_HTTP_URL", DEFAULT_BSC_HTTP)
-	c.confirmations = uint64(envInt("DEX_CONFIRMATIONS", 3))
-	c.logPollEvery = envDurationMS("DEX_LOG_POLL_MS", 2000)
+	if err := c.Connect(ctx, envStr("BSC_WS_URL", DEFAULT_BSC_WS_URL), envStr("BSC_HTTP_URL", DEFAULT_BSC_HTTP)); err != nil {
+        return err
+    }
+    defer c.Close()
+	if err := c.setupTokenInfo(); err != nil { 
+		log.Println(err) 
+		return nil
+	}
 
-	// connect WS/HTTP
-	var err error
-	c.ws, err = ethclient.DialContext(ctx, wsURL); if err != nil { return fmt.Errorf("WS dial: %w", err) }
-	defer c.ws.Close()
-	if httpURL != "" { if hc, err := ethclient.DialContext(ctx, httpURL); err == nil { c.http = hc; defer c.http.Close() } }
-
-	// ABIs
-	if c.v3PoolABI, err = abi.JSON(strings.NewReader(pool3ABIJSON)); err != nil { return fmt.Errorf("v3 pool ABI: %w", err) }
-	if c.v3FactoryABI, err = abi.JSON(strings.NewReader(pancakeV3FactoryABI)); err != nil { return fmt.Errorf("v3 factory ABI: %w", err) }
-	if c.v2PairABI, err = abi.JSON(strings.NewReader(pool2ABIJSON)); err != nil { return fmt.Errorf("v2 pair ABI: %w", err) }
-
-	// tokens & orientation
-	if err := c.setupTokenInfo(); err != nil { return err }
-
-	// pools (mixed)
 	c.pools = c.loadPools(ctx)
-	if len(c.pools) == 0 { return fmt.Errorf("no pools for %s", c.Symbol) }
-	log.Printf("[%s] monitoring %d pool(s)", c.Name(), len(c.pools))
 
-	// subscribe each pool via unified path
-	for _, ref := range c.pools { r := ref; go c.subscribePool(ctx, r) }
-	<-ctx.Done(); return ctx.Err()
-}
-
-func (c *Collector) setupTokenInfo() error {
-	t0, t1, d0, d1, ok := getTokenInfoForSymbol(c.Symbol); if !ok { return fmt.Errorf("unsupported symbol: %s", c.Symbol) }
-	if bytes.Compare(t0.Bytes(), t1.Bytes()) <= 0 { c.token0, c.token1, c.token0Decimals, c.token1Decimals, c.invertForQuote = t0, t1, d0, d1, false } else { c.token0, c.token1, c.token0Decimals, c.token1Decimals, c.invertForQuote = t1, t0, d1, d0, true }
-	return nil
-}
-
-func (c *Collector) loadPools(ctx context.Context) []poolRef {
-	v3, v2 := envPoolsForSymbolV3V2(c.Symbol)
-	var out []poolRef
-	// v2: cache event id and token0/1
-	for _, a := range v2 {
-		ref := poolRef{addr: a, ver: verV2, eventID: c.v2PairABI.Events["Swap"].ID}
-		// best-effort token0/token1
-		if data, err := c.v2PairABI.Pack("token0"); err == nil {
-			if res, err := c.ws.CallContract(ctx, ethereum.CallMsg{To: &a, Data: data}, nil); err == nil {
-				if vals, err := c.v2PairABI.Unpack("token0", res); err == nil && len(vals)==1 { ref.v2t0, _ = vals[0].(common.Address) }
-			}
-		}
-		if data, err := c.v2PairABI.Pack("token1"); err == nil {
-			if res, err := c.ws.CallContract(ctx, ethereum.CallMsg{To: &a, Data: data}, nil); err == nil {
-				if vals, err := c.v2PairABI.Unpack("token1", res); err == nil && len(vals)==1 { ref.v2t1, _ = vals[0].(common.Address) }
-			}
-		}
-		out = append(out, ref)
+	for _, ref := range c.pools {
+		r := ref
+		go c.subscribePoolWith(ctx, r, func(lg types.Log, pr poolRef) {
+			c.onSwapEvent(ctx, lg, pr)
+		})
 	}
-	// v3: from ENV (raw -> v3) or factory discovery
-	for _, a := range v3 { out = append(out, poolRef{addr: a, ver: verV3, eventID: c.v3PoolABI.Events["Swap"].ID}) }
-	if len(v3) == 0 && len(v2) == 0 {
-		for _, a := range c.discoverPoolsViaFactory(ctx) { out = append(out, poolRef{addr: a, ver: verV3, eventID: c.v3PoolABI.Events["Swap"].ID}) }
-	}
-	return out
+	
+	<-ctx.Done()
+	return ctx.Err()
 }
+
+
+type swapEvent struct {
+	ver        poolVer
+	pool       common.Address
+	blockNum   uint64
+	logIndex   uint64
+	txHash     common.Hash
+	
+	amount0    *big.Int
+	amount1    *big.Int
+	liquidity  *big.Int
+	tick       int32
+	sqrtP      *big.Int
+
+	price01    float64 
+	price10    float64
+
+	pre01, pre10  float64
+	exec01, exec10 float64
+	dir            uint8 
+
+    a0In, a1In 	*big.Int
+    a0Out,a1Out	*big.Int   
+}
+
+func (c *Collector) Connect(ctx context.Context, wsURL, httpURL string) error {
+    ws, err := ethclient.DialContext(ctx, wsURL)
+    if err != nil { return err }
+    c.ws = ws
+
+    if httpURL != "" {
+        if hc, err := ethclient.DialContext(ctx, httpURL); err == nil {
+            c.http = hc
+        }
+    }
+    return nil
+}
+
+func (c *Collector) Close() {
+    if c.ws != nil {
+        c.ws.Close(); c.ws = nil
+    }
+    if c.http != nil {
+        c.http.Close(); c.http = nil
+    }
+}
+
+func (c *Collector) publishPrice(ps *swapEvent) {
+	ex := c.exchangeLabelByAddr[ps.pool]
+	if ex == "" { ex = "PancakeSwap" }
+
+	var sqrtP, liq string
+	var tick int32
+	if ps.ver == verV3 {
+		sqrtP = toStr(ps.sqrtP)
+		liq   = toStr(ps.liquidity)
+		tick  = ps.tick
+	} else {
+		sqrtP = "0"; liq = "0"; tick = 0
+	}
+
+	evt := publisher.NewMarketDataBuilder(
+		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
+	).WithHeaderChain("BSC").
+		WithHeaderPoolAddress(ps.pool.Hex()).
+		WithDexSwapL1(&pb.DexSwapL1{
+			Amount0: toStr(ps.amount0), Amount1: toStr(ps.amount1),
+			SqrtPriceX96: sqrtP, Tick: tick, LiquidityU128: liq,
+			Pool: ps.pool.Hex(), TxHash: ps.txHash.Hex(), LogIndex: ps.logIndex, BlockNumber: ps.blockNum,
+			Token0: ADDR_TO_SYMBOL[c.token0.Hex()], Token1: ADDR_TO_SYMBOL[c.token1.Hex()], Token0Decimals: uint32(c.token0Decimals), Token1Decimals: uint32(c.token1Decimals),
+			InvertForQuote: c.invertForQuote, Price01: ps.price01, Price10: ps.price10,
+		}).Build()
+
+	_ = c.Pub.Publish(evt)
+}
+
+func (c *Collector) publishVolume(ps *swapEvent) {
+	ex := c.exchangeLabelByAddr[ps.pool]
+	if ex == "" { ex = "PancakeSwap" }
+
+	vol0 := absFloat(intToFloat(ps.amount0, c.token0Decimals))
+	vol1 := absFloat(intToFloat(ps.amount1, c.token1Decimals))
+	evt := publisher.NewMarketDataBuilder(
+		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
+	).WithHeaderChain("BSC").
+		WithHeaderPoolAddress(ps.pool.Hex()).
+		WithVolume(vol0, vol1, 0, 0, 0). // 집계는 downstream
+		Build()
+	
+	// fmt.Println("??",  ADDR_TO_SYMBOL[c.token0.Hex()],vol0, ADDR_TO_SYMBOL[c.token1.Hex()], vol1)
+	_ = c.Pub.Publish(evt)
+}
+
+func (c *Collector) publishFee(ps *swapEvent) {
+	ex := c.exchangeLabelByAddr[ps.pool]
+	if ex == "" { ex = "PancakeSwap" }
+
+	evt := publisher.NewMarketDataBuilder(
+		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
+	).WithHeaderChain("BSC").
+		WithHeaderPoolAddress(ps.pool.Hex()).
+		WithFee(0.0, float64(c.pools[ps.pool].fee)/1e6).
+		Build()
+
+	_ = c.Pub.Publish(evt)
+}
+
+func (c *Collector) publishSlippage(ps *swapEvent) {
+	ex := c.exchangeLabelByAddr[ps.pool]
+	if ex == "" { ex = "PancakeSwap" }
+	
+	var impactBps01, impactBps10 float64
+	
+	switch ps.dir {
+	case Dir01:
+		if ps.pre01 > 0 && ps.exec01 > 0 {
+			impactBps01 = (ps.exec01/ps.pre01 - 1.0) * 10000.0
+		}
+	case Dir10:
+		if ps.pre10 > 0 && ps.exec10 > 0 {
+			impactBps10 = (ps.exec10/ps.pre10 - 1.0) * 10000.0
+		}
+	default:
+	}
+	
+	evt := publisher.NewMarketDataBuilder(
+		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
+	).WithHeaderChain("BSC").
+		WithHeaderPoolAddress(ps.pool.Hex()).
+		WithSlippage(impactBps01, impactBps10, ps.txHash.Hex(), ps.blockNum).
+		Build()
+
+	_ = c.Pub.Publish(evt)
+}
+
 
 // ONE subscribe for both versions
-func (c *Collector) subscribePool(ctx context.Context, pr poolRef) {
+func (c *Collector) subscribePoolWith(ctx context.Context, pr poolRef, handler func(types.Log, poolRef)) {
 	ch := make(chan types.Log, 256)
 	q := ethereum.FilterQuery{Addresses: []common.Address{pr.addr}, Topics: [][]common.Hash{{pr.eventID}}}
 	for {
@@ -200,7 +276,8 @@ func (c *Collector) subscribePool(ctx context.Context, pr poolRef) {
 			case <-sub.Err():
 				sub.Unsubscribe(); time.Sleep(1*time.Second); goto RETRY
 			case lg := <-ch:
-				c.handleLog(lg, pr)
+				if lg.Removed { continue }
+				handler(lg, pr)
 			case <-ctx.Done():
 				sub.Unsubscribe(); return
 			}
@@ -209,66 +286,109 @@ func (c *Collector) subscribePool(ctx context.Context, pr poolRef) {
 	}
 }
 
-// ONE handler for both versions
-func (c *Collector) handleLog(lg types.Log, pr poolRef) {
-	if lg.Removed { return }
-	// de-dup
-	c.mu.Lock()
-	if (lg.BlockNumber < c.lastBlock) || (lg.BlockNumber == c.lastBlock && lg.Index <= c.lastIdx) { c.mu.Unlock(); return }
-	c.lastBlock, c.lastIdx = lg.BlockNumber, lg.Index
-	c.mu.Unlock()
+
+func (c *Collector) parseSwap(ctx context.Context, lg types.Log, pr poolRef) (*swapEvent, bool) {
+	ps := &swapEvent{
+		ver:      pr.ver,
+		pool:     lg.Address,
+		blockNum: uint64(lg.BlockNumber),
+		logIndex: uint64(lg.Index),
+		txHash:   lg.TxHash,
+	}
 
 	switch pr.ver {
 	case verV3:
 		fields, err := c.v3PoolABI.Events["Swap"].Inputs.NonIndexed().Unpack(lg.Data)
-		if err != nil || len(fields) < 5 { return }
-		sp, _ := fields[2].(*big.Int); if sp==nil || sp.Sign()==0 { return }
+		if err != nil || len(fields) < 5 { return nil, false }
 		a0, _ := fields[0].(*big.Int)
 		a1, _ := fields[1].(*big.Int)
+		sp, _ := fields[2].(*big.Int)
+		if sp == nil || sp.Sign() == 0 { 
+			return nil, false 
+		}
 		liq,_ := fields[3].(*big.Int)
 		tk, _ := fields[4].(*big.Int)
+
+		ps.amount0 = a0
+		ps.amount1 = a1
+		ps.sqrtP   = sp
+		ps.liquidity = liq
+		if tk != nil { ps.tick = int32(tk.Int64()) }
+
 		p01, p10 := c.sqrtPriceX96ToPrice(sp)
-		evt := publisher.NewMarketDataBuilder("PancakeSwapV3", c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP).
-			WithDexSwapL1(&pb.DexSwapL1{
-				Amount0: toStr(a0), Amount1: toStr(a1), SqrtPriceX96: toStr(sp),
-				Tick: int32(tk.Int64()), LiquidityU128: toStr(liq),
-				Pool: lg.Address.Hex(), TxHash: lg.TxHash.Hex(), LogIndex: uint64(lg.Index), BlockNumber: uint64(lg.BlockNumber),
-				Token0: c.token0.Hex(), Token1: c.token1.Hex(), Token0Decimals: uint32(c.token0Decimals), Token1Decimals: uint32(c.token1Decimals),
-				InvertForQuote: c.invertForQuote, Price_01: p01, Price_10: p10,
-			}).Build()
-		if evt.Header == nil { evt.Header = &pb.Header{} }
-		evt.Header.TsNs = time.Now().UnixNano(); _ = c.Pub.Publish(evt)
+		ps.price01, ps.price10 = p01, p10
 
 	case verV2:
-		// V2 Swap(amount0In, amount1In, amount0Out, amount1Out) + indexed sender,to in topics
 		fields, err := c.v2PairABI.Events["Swap"].Inputs.NonIndexed().Unpack(lg.Data)
-		if err != nil || len(fields) < 4 { return }
-		a0In,  _ := fields[0].(*big.Int)
-		a1In,  _ := fields[1].(*big.Int)
-		a0Out, _ := fields[2].(*big.Int)
-		a1Out, _ := fields[3].(*big.Int)
+		if err != nil || len(fields) < 4 { return nil, false }
+		a0In,_ := fields[0].(*big.Int)
+		a1In,_ := fields[1].(*big.Int)
+		a0Out,_:= fields[2].(*big.Int)
+		a1Out,_:= fields[3].(*big.Int)
 
-		// pool-side signed deltas to align with v3 semantics: amount = in - out
+		ps.a0In, ps.a1In, ps.a0Out, ps.a1Out = a0In, a1In, a0Out, a1Out
+
 		amt0 := new(big.Int).Sub(zeroOr(a0In), zeroOr(a0Out))
 		amt1 := new(big.Int).Sub(zeroOr(a1In), zeroOr(a1Out))
 
-		// effective trade price token1/token0
-		price01, price10 := v2TradePrice(amt0, amt1, a0In, a1In, a0Out, a1Out, c.token0Decimals, c.token1Decimals)
+		ps.amount0 = amt0
+		ps.amount1 = amt1
 
-		evt := publisher.NewMarketDataBuilder("PancakeSwapV2", c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP).
-			WithDexSwapL1(&pb.DexSwapL1{
-				Amount0: amt0.String(), Amount1: amt1.String(),
-				SqrtPriceX96: "0", Tick: 0, LiquidityU128: "0",
-				Pool: lg.Address.Hex(), TxHash: lg.TxHash.Hex(), LogIndex: uint64(lg.Index), BlockNumber: uint64(lg.BlockNumber),
-				Token0: c.token0.Hex(), Token1: c.token1.Hex(), Token0Decimals: uint32(c.token0Decimals), Token1Decimals: uint32(c.token1Decimals),
-				InvertForQuote: c.invertForQuote, Price_01: price01, Price_10: price10,
-			}).Build()
-		if evt.Header == nil { evt.Header = &pb.Header{} }
-		evt.Header.TsNs = time.Now().UnixNano(); _ = c.Pub.Publish(evt)
+		p01, p10 := v2TradePrice(amt0, amt1, a0In, a1In, a0Out, a1Out, c.token0Decimals, c.token1Decimals)
+		ps.price01, ps.price10 = p01, p10
 	}
+
+	return ps, true
 }
 
-// sqrtPriceX96 -> prices (v3)
+
+func (c *Collector) onSwapEvent(ctx context.Context, lg types.Log, pr poolRef) {
+	c.mu.Lock()
+	if (lg.BlockNumber < c.lastBlock) || (lg.BlockNumber == c.lastBlock && lg.Index <= c.lastIdx) {
+		c.mu.Unlock(); return
+	}
+	c.lastBlock, c.lastIdx = lg.BlockNumber, lg.Index
+	c.mu.Unlock()
+
+	ps, ok := c.parseSwap(ctx, lg, pr)
+	if !ok { return }
+
+	switch pr.ver {
+    case verV3:
+		ps.dir = detectDirV3(ps)
+
+        if prev := c.lastSqrtV3[ps.pool]; prev != nil && prev.Sign() > 0 {
+            b01, b10 := c.sqrtPriceX96ToPrice(prev)
+            ps.pre01, ps.pre10 = b01, b10
+        }
+
+		e01, e10 := c.execPreFeeFromLegs(ps)
+		ps.exec01, ps.exec10 = e01, e10
+
+		if ps.sqrtP != nil && ps.sqrtP.Sign() > 0 {
+            c.lastSqrtV3[ps.pool] = new(big.Int).Set(ps.sqrtP)
+        }
+	case verV2:
+		ps.dir = detectDirV2(ps)
+
+		if lp, ok := c.lastPx[ps.pool]; ok && lp.p01 > 0 && lp.p10 > 0 {
+			ps.pre01, ps.pre10 = lp.p01, lp.p10
+		}
+			
+		e01, e10 := c.execPreFeeFromLegs(ps)
+		ps.exec01, ps.exec10 = e01, e10
+
+		if e01 > 0 && e10 > 0 {
+			c.lastPx[ps.pool] = struct{ p01, p10 float64 }{e01, e10}
+		}
+	}
+
+	c.publishPrice(ps)
+	c.publishVolume(ps)
+	c.publishFee(ps)
+	c.publishSlippage(ps)
+}
+
 func (c *Collector) sqrtPriceX96ToPrice(sqrtPriceX96 *big.Int) (p01, p10 float64) {
 	if sqrtPriceX96 == nil || sqrtPriceX96.Sign() == 0 { return 0, 0 }
 	prec := uint(256)
@@ -293,71 +413,117 @@ func v2TradePrice(amt0, amt1, a0In, a1In, a0Out, a1Out *big.Int, d0, d1 int) (pr
 	prec := uint(256)
 	scale := big.NewFloat(math.Pow10(d0 - d1))
 	if a0In != nil && a0In.Sign() > 0 && a1Out != nil && a1Out.Sign() > 0 {
-		bf := new(big.Float).Quo(new(big.Float).SetPrec(prec).SetInt(a1Out), new(big.Float).SetPrec(prec).SetInt(a0In))
+		bf := new(big.Float).Quo(
+				new(big.Float).SetPrec(prec).SetInt(a1Out), 
+				new(big.Float).SetPrec(prec).SetInt(a0In),
+			)
 		bf.Mul(bf, scale); price01, _ = bf.Float64()
 	} else if a1In != nil && a1In.Sign() > 0 && a0Out != nil && a0Out.Sign() > 0 {
-		bf := new(big.Float).Quo(new(big.Float).SetPrec(prec).SetInt(a1In), new(big.Float).SetPrec(prec).SetInt(a0Out))
+		bf := new(big.Float).Quo(
+				new(big.Float).SetPrec(prec).SetInt(a1In), 
+				new(big.Float).SetPrec(prec).SetInt(a0Out),
+			)
 		bf.Mul(bf, scale); price01, _ = bf.Float64()
 	}
 	if price01 > 0 { price10 = 1 / price01 }
 	return
 }
 
-// helpers
-func toStr(x *big.Int) string { if x==nil { return "0" }; return x.String() }
-func zeroOr(x *big.Int) *big.Int { if x==nil { return big.NewInt(0) }; return new(big.Int).Set(x) }
+func (c *Collector) setupTokenInfo() error {
+	t0, t1, d0, d1, ok := getTokenInfoForSymbol(c.Symbol)
+	if !ok {
+		return fmt.Errorf("unsupported symbol: %s", c.Symbol)
+	}
+	if bytes.Compare(t0.Bytes(), t1.Bytes()) <= 0 { 
+		c.token0, c.token1, c.token0Decimals, c.token1Decimals, c.invertForQuote = t0, t1, d0, d1, false 
+	} else { 
+		c.token0, c.token1, c.token0Decimals, c.token1Decimals, c.invertForQuote = t1, t0, d1, d0, true 
+	}
+	return nil
+}
 
-// --------- ENV parsing (raw -> v3) ---------
+// legs에서 프리-피 실행가(p01,p10) 복원
+func (c *Collector) execPreFeeFromLegs(ps *swapEvent) (p01, p10 float64) {
+    f := float64(c.pools[ps.pool].fee) / float64(1e6)
 
-func envPoolsForSymbolV3V2(sym string) (v3 []common.Address, v2 []common.Address) {
-	key := "DEX_POOLS_" + strings.ToUpper(strings.TrimSpace(sym))
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" { return nil, nil }
-	items := strings.Split(raw, ",")
-	for _, it := range items {
-		it = strings.TrimSpace(it); if it == "" { continue }
-		parts := strings.Split(it, "@")
-		if len(parts) == 2 {
-			ver := strings.ToLower(strings.TrimSpace(parts[0]))
-			addr := strings.TrimSpace(parts[1])
-			if !common.IsHexAddress(addr) { continue }
-			switch ver { case "v3": v3 = append(v3, common.HexToAddress(addr)); case "v2": v2 = append(v2, common.HexToAddress(addr)) }
-			continue
+    // 0->1
+    if ps.amount0 != nil && ps.amount0.Sign() > 0 && ps.amount1 != nil && ps.amount1.Sign() < 0 {
+        baseIn := absFloat(intToFloat(ps.amount0, c.token0Decimals))
+        quoteOut := absFloat(intToFloat(new(big.Int).Neg(ps.amount1), c.token1Decimals))
+        if baseIn > 0 {
+            p01 = quoteOut / (baseIn * (1 - f))
+            if p01 > 0 { p10 = 1.0 / p01 }
+        }
+        return
+    }
+    // 1->0
+    if ps.amount1 != nil && ps.amount1.Sign() > 0 && ps.amount0 != nil && ps.amount0.Sign() < 0 {
+        baseIn := absFloat(intToFloat(ps.amount1, c.token1Decimals))
+        quoteOut := absFloat(intToFloat(new(big.Int).Neg(ps.amount0), c.token0Decimals))
+        if baseIn > 0 {
+            p10 = quoteOut / (baseIn * (1 - f))
+            if p10 > 0 { p01 = 1.0 / p10 }
+        }
+        return
+    }
+    return 0,0
+}
+
+
+
+func (c *Collector) loadPools(ctx context.Context) map[common.Address]poolRef {
+	v3, v2 := envPoolsForSymbolV3V2(c.Symbol)
+
+	out := make(map[common.Address]poolRef, len(v3)+len(v2))
+
+	for _, a := range v3 {
+		var feeU32 uint32
+		if data, err := c.v3PoolABI.Pack("fee"); err == nil {
+			if res, err := c.ws.CallContract(ctx, ethereum.CallMsg{To: &a, Data: data}, nil); err == nil {
+                if outVals, err := c.v3PoolABI.Unpack("fee", res); err == nil && len(outVals) > 0 {
+                    switch v := outVals[0].(type) {
+                    case *big.Int:
+                        feeU32 = uint32(v.Uint64())
+                    case uint32:
+                        feeU32 = v
+                    case uint64:
+                        feeU32 = uint32(v)
+                    default:
+                        feeU32 = 0
+                    }
+                }
+            }
 		}
-		if common.IsHexAddress(it) { v3 = append(v3, common.HexToAddress(it)) }
+
+		out[a] = poolRef{
+            addr:    a,
+            ver:     verV3,
+            eventID: c.v3PoolABI.Events["Swap"].ID,
+            fee:     feeU32,
+        }
+
+		if c.exchangeLabelByAddr != nil {
+			c.exchangeLabelByAddr[a] = "PancakeSwapV3"
+		}	
 	}
-	return
+
+	for _, a := range v2 {
+		out[a] = poolRef{
+            addr:    a,
+            ver:     verV2,
+            eventID: c.v2PairABI.Events["Swap"].ID,
+            fee:      uint32(envInt("DEX_V2_FEE", 2500)),
+        }
+		if c.exchangeLabelByAddr != nil {
+			c.exchangeLabelByAddr[a] = "PancakeSwapV2"
+		}
+	}
+	return out
 }
 
-// --------- v3 discovery (only when no ENV v3) ---------
-
-func (c *Collector) discoverPoolsViaFactory(ctx context.Context) []common.Address {
-	factory := common.HexToAddress(PANCAKE_V3_FACTORY)
-	var found []common.Address
-	tokA, tokB := c.token0, c.token1
-	for _, fee := range feeTiers {
-		calldata, err := c.v3FactoryABI.Pack("getPool", tokA, tokB, new(big.Int).SetUint64(uint64(fee)))
-		if err != nil { continue }
-		res, err := c.ws.CallContract(ctx, ethereum.CallMsg{To: &factory, Data: calldata}, nil)
-		if err != nil { continue }
-		out, err := c.v3FactoryABI.Unpack("getPool", res)
-		if err != nil || len(out)==0 { continue }
-		addr, _ := out[0].(common.Address)
-		if addr != (common.Address{}) { found = append(found, addr) }
-	}
-	return found
-}
-
-// (optional) your Multicall/Quoter ABIs can live elsewhere; omitted here for brevity
-
-// --------- init (register unified) ---------
 
 func init() {
 	exchange.Register("pancakeswap", func(symbol string, pub publisher.Nats) exchange.Collector {
-		return New(symbol, nil, pub) // unified v2+v3
-	})
-	// keep alias for compatibility
-	exchange.Register("pancakeswapv3", func(symbol string, pub publisher.Nats) exchange.Collector {
-		return New(symbol, nil, pub)
+		return New(symbol, pub)
 	})
 }

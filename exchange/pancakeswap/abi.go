@@ -44,6 +44,15 @@ const pool3ABIJSON = `[
     ],
     "name": "Swap",
     "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "fee",
+    "outputs": [
+      { "internalType": "uint24", "name": "", "type": "uint24" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   }
 ]`
 
