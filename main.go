@@ -111,12 +111,25 @@ type service struct {
 
 func (s *service) runService(ctx context.Context, exchanges, symbols []string) error {
 	for _, ex := range exchanges {
-		cs, err := exchange.NewCollectors(ex, symbols, s.pub)
+		syms := symbols
+		switch strings.ToLower(ex) {
+		case "pancakeswap", "pancakeswapv3":
+			if dex := splitCSV(getEnv("DEX_SYMBOLS", "")); len(dex) > 0 {
+				syms = dex
+			}
+		case "binance":
+			if cex := splitCSV(getEnv("BINANCE_SYMBOLS", "")); len(cex) > 0 {
+				syms = cex
+			}
+		}
+
+		cs, err := exchange.NewCollectors(ex, syms, s.pub)
 		if err != nil {
 			return fmt.Errorf("init collectors (%s): %w", ex, err)
 		}
 		s.collectors = append(s.collectors, cs...)
 	}
+
 	if len(s.collectors) == 0 {
 		return errors.New("no collectors configured")
 	}
@@ -273,7 +286,8 @@ Usage:
 
 Environment:
   NATS_URL             (default: nats://127.0.0.1:4222)
-  EXCHANGES            (default: binance,pancakeswapv3)
+  BINANCE_SYMBOLS      (optional: overrides SYMBOLS for Binance)
+  DEX_SYMBOLS          (optional: symbols for PancakeSwap/PancakeSwapV3)
   SYMBOLS              (default: ETHUSDT)                 # include DEX symbol like WBNBUSDT,ETHUSDT
   LOG_PUBLISH_FILE     (default: ./logs/market-publish.log)
   LOG_PUBLISH_ENABLE   (default: true)                    # "false" to start with logging off

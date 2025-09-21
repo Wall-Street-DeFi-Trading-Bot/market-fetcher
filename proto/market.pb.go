@@ -288,15 +288,9 @@ func (x *Header) GetPoolAddress() string {
 type TickL1 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Best bid/ask. If not available (DEX mark-only), set bid/ask = 0 and use mid.
-	Bid float64 `protobuf:"fixed64,1,opt,name=bid,proto3" json:"bid,omitempty"`
-	Ask float64 `protobuf:"fixed64,2,opt,name=ask,proto3" json:"ask,omitempty"`
-	Mid float64 `protobuf:"fixed64,3,opt,name=mid,proto3" json:"mid,omitempty"`
-	// Optional size at best.
-	BidSize float64 `protobuf:"fixed64,4,opt,name=bid_size,json=bidSize,proto3" json:"bid_size,omitempty"`
-	AskSize float64 `protobuf:"fixed64,5,opt,name=ask_size,json=askSize,proto3" json:"ask_size,omitempty"`
-	// Optional auxiliary metrics.
-	Twap          float64 `protobuf:"fixed64,10,opt,name=twap,proto3" json:"twap,omitempty"`           // DEX short-window twap if computed, else 0
-	Liquidity     float64 `protobuf:"fixed64,11,opt,name=liquidity,proto3" json:"liquidity,omitempty"` // DEX liquidity approximation if available, else 0
+	Bid           float64 `protobuf:"fixed64,1,opt,name=bid,proto3" json:"bid,omitempty"`
+	Ask           float64 `protobuf:"fixed64,2,opt,name=ask,proto3" json:"ask,omitempty"`
+	Mid           float64 `protobuf:"fixed64,3,opt,name=mid,proto3" json:"mid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -352,34 +346,6 @@ func (x *TickL1) GetMid() float64 {
 	return 0
 }
 
-func (x *TickL1) GetBidSize() float64 {
-	if x != nil {
-		return x.BidSize
-	}
-	return 0
-}
-
-func (x *TickL1) GetAskSize() float64 {
-	if x != nil {
-		return x.AskSize
-	}
-	return 0
-}
-
-func (x *TickL1) GetTwap() float64 {
-	if x != nil {
-		return x.Twap
-	}
-	return 0
-}
-
-func (x *TickL1) GetLiquidity() float64 {
-	if x != nil {
-		return x.Liquidity
-	}
-	return 0
-}
-
 type DexSwapL1 struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// --- Raw swap event fields (as emitted by the pool) ---
@@ -394,7 +360,6 @@ type DexSwapL1 struct {
 	ProtocolFeesToken0 string `protobuf:"bytes,13,opt,name=protocol_fees_token0,json=protocolFeesToken0,proto3" json:"protocol_fees_token0,omitempty"` // uint128 as string
 	ProtocolFeesToken1 string `protobuf:"bytes,14,opt,name=protocol_fees_token1,json=protocolFeesToken1,proto3" json:"protocol_fees_token1,omitempty"` // uint128 as string
 	// --- Context / identity ---
-	Pool        string `protobuf:"bytes,20,opt,name=pool,proto3" json:"pool,omitempty"`                                   // pool address (0x…)
 	TxHash      string `protobuf:"bytes,21,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`                 // transaction hash (0x…)
 	LogIndex    uint64 `protobuf:"varint,22,opt,name=log_index,json=logIndex,proto3" json:"log_index,omitempty"`          // log index within the tx
 	BlockNumber uint64 `protobuf:"varint,23,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"` // block number
@@ -488,13 +453,6 @@ func (x *DexSwapL1) GetProtocolFeesToken0() string {
 func (x *DexSwapL1) GetProtocolFeesToken1() string {
 	if x != nil {
 		return x.ProtocolFeesToken1
-	}
-	return ""
-}
-
-func (x *DexSwapL1) GetPool() string {
-	if x != nil {
-		return x.Pool
 	}
 	return ""
 }
@@ -1102,16 +1060,11 @@ const file_market_proto_rawDesc = "" +
 	"\x05ts_ns\x18\x05 \x01(\x03R\x04tsNs\x12%\n" +
 	"\x0eschema_version\x18\x06 \x01(\rR\rschemaVersion\x12\x14\n" +
 	"\x05chain\x18\a \x01(\tR\x05chain\x12!\n" +
-	"\fpool_address\x18\b \x01(\tR\vpoolAddress\"\xa6\x01\n" +
+	"\fpool_address\x18\b \x01(\tR\vpoolAddress\">\n" +
 	"\x06TickL1\x12\x10\n" +
 	"\x03bid\x18\x01 \x01(\x01R\x03bid\x12\x10\n" +
 	"\x03ask\x18\x02 \x01(\x01R\x03ask\x12\x10\n" +
-	"\x03mid\x18\x03 \x01(\x01R\x03mid\x12\x19\n" +
-	"\bbid_size\x18\x04 \x01(\x01R\abidSize\x12\x19\n" +
-	"\bask_size\x18\x05 \x01(\x01R\aaskSize\x12\x12\n" +
-	"\x04twap\x18\n" +
-	" \x01(\x01R\x04twap\x12\x1c\n" +
-	"\tliquidity\x18\v \x01(\x01R\tliquidity\"\xef\x04\n" +
+	"\x03mid\x18\x03 \x01(\x01R\x03mid\"\xdb\x04\n" +
 	"\tDexSwapL1\x12\x18\n" +
 	"\aamount0\x18\x01 \x01(\tR\aamount0\x12\x18\n" +
 	"\aamount1\x18\x02 \x01(\tR\aamount1\x12$\n" +
@@ -1120,8 +1073,7 @@ const file_market_proto_rawDesc = "" +
 	"\x04tick\x18\v \x01(\x11R\x04tick\x12%\n" +
 	"\x0eliquidity_u128\x18\f \x01(\tR\rliquidityU128\x120\n" +
 	"\x14protocol_fees_token0\x18\r \x01(\tR\x12protocolFeesToken0\x120\n" +
-	"\x14protocol_fees_token1\x18\x0e \x01(\tR\x12protocolFeesToken1\x12\x12\n" +
-	"\x04pool\x18\x14 \x01(\tR\x04pool\x12\x17\n" +
+	"\x14protocol_fees_token1\x18\x0e \x01(\tR\x12protocolFeesToken1\x12\x17\n" +
 	"\atx_hash\x18\x15 \x01(\tR\x06txHash\x12\x1b\n" +
 	"\tlog_index\x18\x16 \x01(\x04R\blogIndex\x12!\n" +
 	"\fblock_number\x18\x17 \x01(\x04R\vblockNumber\x12\x1c\n" +

@@ -196,7 +196,7 @@ func (c *Collector) publishPrice(ps *swapEvent) {
 		WithDexSwapL1(&pb.DexSwapL1{
 			Amount0: toStr(ps.amount0), Amount1: toStr(ps.amount1),
 			SqrtPriceX96: sqrtP, Tick: tick, LiquidityU128: liq,
-			Pool: ps.pool.Hex(), TxHash: ps.txHash.Hex(), LogIndex: ps.logIndex, BlockNumber: ps.blockNum,
+			TxHash: ps.txHash.Hex(), LogIndex: ps.logIndex, BlockNumber: ps.blockNum,
 			Token0: ADDR_TO_SYMBOL[c.token0.Hex()], Token1: ADDR_TO_SYMBOL[c.token1.Hex()], Token0Decimals: uint32(c.token0Decimals), Token1Decimals: uint32(c.token1Decimals),
 			InvertForQuote: c.invertForQuote, Price01: ps.price01, Price10: ps.price10,
 		}).Build()

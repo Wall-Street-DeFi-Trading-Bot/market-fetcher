@@ -12,8 +12,9 @@ const (
 
 	WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
 	USDT = "0x55d398326f99059fF775485246999027B3197955"
-	WETH = "0x2170ed0880ac9a755fd29b2688956bd959f933f8"
-	WoD = "0xb994882a1b9bd98A71Dd6ea5F61577c42848B0E8"
+	WETH = "0x2170Ed0880ac9A755fd29B2688956BD959F933F8"
+	CAKE = "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82"
+	USDC = "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
 )
 
 const (
@@ -24,18 +25,22 @@ const (
 var ADDR_TO_SYMBOL = map[string]string{
 	"0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c": "WBNB",
 	"0x55d398326f99059fF775485246999027B3197955": "USDT",
-	"0x2170ed0880ac9a755fd29b2688956bd959f933f8": "WETH",
+	"0x2170Ed0880ac9A755fd29B2688956BD959F933F8": "WETH",
+	"0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82": "CAKE",
+	"0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d": "USDC",
 }
 
 func getTokenInfoForSymbol(sym string) (t0, t1 common.Address, d0, d1 int, ok bool) {
 	s := strings.TrimSpace(sym)
 	switch s {
-	case "ETHUSDT":
+	case "WETHUSDT", "ETHUSDT":
 		return common.HexToAddress(WETH), common.HexToAddress(USDT), 18, 18, true
 	case "WBNBUSDT", "BNBUSDT":
 		return common.HexToAddress(WBNB), common.HexToAddress(USDT), 18, 18, true
-	case "WoDUSDT":
-		return common.HexToAddress(WoD), common.HexToAddress(USDT), 18, 18, true
+	case "WBNBCAKE", "BNBCAKE":
+		return common.HexToAddress(WBNB), common.HexToAddress(CAKE), 18, 18, true
+	case "USDCUSDT":
+		return common.HexToAddress(USDC), common.HexToAddress(USDT), 18, 18, true
 	default:
 		return common.Address{}, common.Address{}, 0, 0, false
 	}

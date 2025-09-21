@@ -70,10 +70,6 @@ func (b *MarketDataBuilder) WithTick(bid, ask, mid, bidSz, askSz, twap, liq floa
 			Bid:       bid,
 			Ask:       ask,
 			Mid:       mid,
-			BidSize:   bidSz,
-			AskSize:   askSz,
-			Twap:      twap,
-			Liquidity: liq,
 		},
 	}
 	return b

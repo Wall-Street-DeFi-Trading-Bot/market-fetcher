@@ -109,8 +109,6 @@ func (p *Publisher) publish(subject string, evt proto.Message) error {
 		Data:    b,
 		Header:  nats.Header{},
 	}
-	// Local enqueue timestamp (for downstream latency metrics)
-	msg.Header.Set("mf-pub-ns", strconv.FormatInt(time.Now().UnixNano(), 10))
 
 	if err := p.nc.PublishMsg(msg); err != nil {
 		return err

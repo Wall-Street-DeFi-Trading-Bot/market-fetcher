@@ -73,7 +73,6 @@ message DexSwapL1 {
   string protocol_fees_token1 = 14;   // uint128 as string
 
   // --- Context / identity ---
-  string pool = 20;                   // pool address (0x…)
   string tx_hash = 21;                // transaction hash (0x…)
   uint64 log_index = 22;              // log index within the tx
   uint64 block_number = 23;           // block number
