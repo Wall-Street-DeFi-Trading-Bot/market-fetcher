@@ -33,8 +33,8 @@ var ADDR_TO_SYMBOL = map[string]string{
 func getTokenInfoForSymbol(sym string) (t0, t1 common.Address, d0, d1 int, ok bool) {
 	s := strings.TrimSpace(sym)
 	switch s {
-	case "WETHUSDT", "ETHUSDT":
-		return common.HexToAddress(WETH), common.HexToAddress(USDT), 18, 18, true
+	case "WBNBETH", "BNBETH":
+		return common.HexToAddress(WBNB), common.HexToAddress(WETH), 18, 18, true
 	case "WBNBUSDT", "BNBUSDT":
 		return common.HexToAddress(WBNB), common.HexToAddress(USDT), 18, 18, true
 	case "WBNBCAKE", "BNBCAKE":
