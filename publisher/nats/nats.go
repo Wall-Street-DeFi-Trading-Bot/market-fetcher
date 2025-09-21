@@ -141,8 +141,8 @@ func subjectFor(evt *pb.MarketData) (string, error) {
         kind = "fee"
     case *pb.MarketData_Trade:
         kind = "trade"
-    case *pb.MarketData_Stats:
-        kind = "stats"
+    case *pb.MarketData_Volume:
+        kind = "volume"
     case *pb.MarketData_Slippage:
         kind = "slippage"
     default:

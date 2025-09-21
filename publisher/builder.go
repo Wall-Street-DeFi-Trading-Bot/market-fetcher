@@ -116,11 +116,11 @@ func (b *MarketDataBuilder) WithTrade(price, size float64, aggr pb.Aggressor) *M
 
 // ---------- NEW: Stats24h (거래량/고저/건수) ----------
 
-func (b *MarketDataBuilder) WithStats24h(volQuote, volBase, high, low float64, trades uint64) *MarketDataBuilder {
-	b.evt.Data = &pb.MarketData_Stats{
-		Stats: &pb.Stats24H{
-			VolumeQuote: volQuote,
-			VolumeBase:  volBase,
+func (b *MarketDataBuilder) WithVolume(vol0, vol1, high, low float64, trades uint64) *MarketDataBuilder {
+	b.evt.Data = &pb.MarketData_Volume{
+		Volume: &pb.Volume{
+			Volume0:    vol0,
+			Volume1:    vol1,
 			High:        high,
 			Low:         low,
 			Trades:      trades,
@@ -139,24 +139,13 @@ func (b *MarketDataBuilder) WithDexSwapL1(f *pb.DexSwapL1) *MarketDataBuilder {
 }
 
 
-// SlippageImpact is a small convenience struct mirroring pb.DexSlippage.Impact.
-type SlippageImpact struct {
-	SizeQuote float64 // e.g., 100, 1000, 10000 (quote currency size)
-	ImpactBps float64 // price impact in basis points
-}
-
-func (b *MarketDataBuilder) WithDexSlippage(impacts []SlippageImpact, poolFeeBps uint32) *MarketDataBuilder {
-	pbImpacts := make([]*pb.DexSlippage_Impact, 0, len(impacts))
-	for _, it := range impacts {
-		pbImpacts = append(pbImpacts, &pb.DexSlippage_Impact{
-			SizeQuote: it.SizeQuote,
-			ImpactBps: it.ImpactBps,
-		})
-	}
+func (b *MarketDataBuilder) WithSlippage(impact01, impact10 float64, txHash string, blockNum uint64) *MarketDataBuilder {
 	b.evt.Data = &pb.MarketData_Slippage{
-		Slippage: &pb.DexSlippage{
-			Impacts:     pbImpacts,
-			PoolFeeBps:  poolFeeBps,
+		Slippage: &pb.Slippage{
+			ImpactBps01:     impact01,
+			ImpactBps10:  	 impact10,
+			TxHash: txHash,
+			BlockNumber: blockNum,
 		},
 	}
 	return b
