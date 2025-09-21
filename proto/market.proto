@@ -55,14 +55,6 @@ message TickL1 {
   double bid = 1;
   double ask = 2;
   double mid = 3;
-
-  // Optional size at best.
-  double bid_size = 4;
-  double ask_size = 5;
-
-  // Optional auxiliary metrics.
-  double twap = 10;     // DEX short-window twap if computed, else 0
-  double liquidity = 11; // DEX liquidity approximation if available, else 0
 }
 
 message DexSwapL1 {
@@ -88,34 +80,29 @@ message DexSwapL1 {
   uint64 timestamp = 24;              // unix seconds
 
   // --- Token metadata (to compute human price) ---
-  string token0 = 30;                 // address
-  string token1 = 31;                 // address
+  string token0 = 30;                 // symbol
+  string token1 = 31;                 // symbol
   uint32 token0_decimals = 32;        // e.g., 18
   uint32 token1_decimals = 33;        // e.g., 18
 
   // --- Orientation & computed prices ---
   // price01 = token1/token0 (pool-native). price_qb = quote/base as requested by the symbol.
   bool invert_for_quote = 40;         // true if we inverted price01 to form quote/base
-  double price_01 = 41;                  // price = (sqrtP/2^96)^2 * 10^(dec0-dec1)
-  double price_10 = 42;               // price after invert if needed (what you publish as “mid”)
-
-  // Optional sizes (if you derive)
-  double size_base = 50;              // executed base size in base units (optional)
-  double size_quote = 51;             // executed quote size in quote units (optional)
+  double price01 = 41;                  // price = (sqrtP/2^96)^2 * 10^(dec0-dec1)
+  double price10 = 42;               // price after invert if needed (what you publish as “mid”)
 }
 
-message DexSlippage {
-  message Impact {
-    double size_quote = 1;
-    double impact_bps = 2;
-  }
-  repeated Impact impacts = 1;
-  uint32 pool_fee_bps     = 2;  // e.g., 25 for 0.25%
+message Slippage {
+  double impact_bps01 = 1;
+  double impact_bps10 = 2; 
+  uint64 block_number = 3;   
+  string tx_hash = 4;    
+  uint64 timestamp = 5;  
 }
 
-message Stats24h {
-  double volume_quote = 1;
-  double volume_base  = 2;
+message Volume {
+  double volume0     = 1; 
+  double volume1     = 2;
   double high         = 3;
   double low          = 4;
   uint64 trades       = 5;
@@ -150,7 +137,7 @@ message MarketData {
     Funding     funding   = 12;
     Fee         fee       = 13;
     Trade       trade     = 14;
-    Stats24h    stats     = 15; 
-    DexSlippage slippage  = 16;  
+    Volume      volume     = 15; 
+    Slippage    slippage  = 16;  
   }
 }
