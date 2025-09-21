@@ -79,12 +79,11 @@ func (b *MarketDataBuilder) WithTick(bid, ask, mid, bidSz, askSz, twap, liq floa
 	return b
 }
 
-func (b *MarketDataBuilder) WithFunding(mark, index, est, rate float64, nextFund int64) *MarketDataBuilder {
+func (b *MarketDataBuilder) WithFunding(mark, index, rate float64, nextFund int64) *MarketDataBuilder {
 	b.evt.Data = &pb.MarketData_Funding{
 		Funding: &pb.Funding{
 			MarkPrice:            mark,
 			IndexPrice:           index,
-			EstimatedSettlePrice: est,
 			FundingRate:          rate,
 			NextFundingTime:      nextFund,
 		},
