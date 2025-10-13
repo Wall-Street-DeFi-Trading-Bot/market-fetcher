@@ -4,7 +4,6 @@ package binance
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +24,9 @@ const (
 	defSpotTaker = 0.0010
 	defPerpMaker = 0.0002 // 0.02%
 	defPerpTaker = 0.0004 // 0.04%
+
+	defaultRecvWindow = "30000"
+	defaultPoll       = 60 * time.Second
 )
 
 // cexEvent carries parsed fields before publishing.
@@ -69,6 +71,9 @@ type Collector struct {
 	spotTaker float64
 	perpMaker float64
 	perpTaker float64
+
+	apiKey    string
+	apiSecret string
 }
 
 func normalizeSymbol(s string) string {
@@ -79,16 +84,6 @@ func normalizeSymbol(s string) string {
 func New(symbol string, pub publisher.Nats) *Collector {
 	sym := normalizeSymbol(symbol)
 	lower := strings.ToLower(sym)
-
-	// env → float helper
-	envF := func(k string, def float64) float64 {
-		if v := os.Getenv(k); v != "" {
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
-				return f
-			}
-		}
-		return def
-	}
 
 	return &Collector{
 		Symbol:       sym,
@@ -112,16 +107,9 @@ func (c *Collector) Name() string  { return "Binance(" + c.Symbol + ")" }
 func (c *Collector) Venue() string { return "cex" }
 
 func (c *Collector) Run(ctx context.Context) error {
-	// --- Fees: publish immediately and then periodically (since WS doesn't provide fees) ---
-	now := time.Now().UnixNano()
-	c.publishFee(&cexEvent{ins: pb.Instrument_INSTRUMENT_SPOT, tsNs: now})
-	c.publishFee(&cexEvent{ins: pb.Instrument_INSTRUMENT_PERPETUAL, tsNs: now})
-	go c.republishFees(ctx, 10*time.Minute)
-
-	// If you need L1 prices, uncomment:
+	// Prices
 	go c.loopBook(ctx, c.spotPriceURL, pb.Instrument_INSTRUMENT_SPOT)
 	go c.loopBook(ctx, c.perpPriceURL, pb.Instrument_INSTRUMENT_PERPETUAL)
-
 	// Volumes (1s) from aggTrade
 	go c.loopAggTrades(ctx, c.spotAggURL, pb.Instrument_INSTRUMENT_SPOT, c.spotVol)
 	go c.loopAggTrades(ctx, c.perpAggURL, pb.Instrument_INSTRUMENT_PERPETUAL, c.perpVol)
@@ -129,6 +117,9 @@ func (c *Collector) Run(ctx context.Context) error {
 	// Funding & next funding time
 	go c.loopMark(ctx, c.perpMarkURL, pb.Instrument_INSTRUMENT_PERPETUAL)
 
+	fees := NewFeeStore(c.Symbol, c.Pub)
+
+    go fees.Start(ctx, pollEveryFor(c.Symbol))
 	<-ctx.Done()
 	return ctx.Err()
 }
