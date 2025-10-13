@@ -36,6 +36,8 @@ Create a `.env` file in the project root. Below is a sample configuration:
 ```env
 BINANCE_API_KEY=YOUR_API_KEY        # Enable Reading + Enable Futures
 BINANCE_API_SECRET=YOUR_API_SECRET
+BINANCE_FEE_POLL=40s        # Binanace Fee polling time
+
 BSC_WS_URL=wss://<YOUR_API_DOMAIN>/v2/<YOUR_API_KEY>
 
 DEX_POOLS_WBNBUSDT=v2@0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae,v3@0x36696169C63e42cd08ce11f5deeBbCeBae652050,
