@@ -18,15 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// TxReplayer is a generic "mainnet-to-fork" transaction replayer.
-// It listens to logs from given target addresses on mainnet (WS),
-// collects tx hashes in chain order, and re-sends the original tx
-// to a local fork (hardhat/anvil) by impersonating the original sender.
+// TxReplayer listens to logs on a source chain and replays the original
+// transactions to a local fork (hardhat/anvil) by impersonating senders.
 type TxReplayer struct {
-	// mainnet / source
-	mainWS   *ethclient.Client
-	mainHTTP *ethclient.Client
-	mainRPC  *rpc.Client
+	// source chain
+	srcWS   *ethclient.Client
+	srcHTTP *ethclient.Client
+	srcRPC  *rpc.Client
 
 	// fork / destination
 	forkHTTP *ethclient.Client
@@ -42,7 +40,7 @@ type TxReplayer struct {
 	MaxSleep time.Duration
 }
 
-// observedLog is a single log observed on mainnet.
+// observedLog holds ordering info for a single log.
 type observedLog struct {
 	TxHash      common.Hash
 	BlockNumber uint64
@@ -52,8 +50,8 @@ type observedLog struct {
 	Addr        common.Address
 }
 
-// New creates a new replayer.
-// It reads targets from env REPLAYER_TARGETS="0xabc,..."
+// New builds a replayer from env.
+// REPLAYER_TARGETS="0xabc,0xdef" is required.
 func New() (*TxReplayer, error) {
 	tgts, err := parseTargets(os.Getenv("REPLAYER_TARGETS"))
 	if err != nil {
@@ -71,52 +69,71 @@ func New() (*TxReplayer, error) {
 	return r, nil
 }
 
-// Run connects to mainnet + fork and starts both subscription and replay loop.
-func (r *TxReplayer) Run(ctx context.Context) error {
-	// source (mainnet/bsc) endpoints
-	mainWSURL := getenv("REPLAYER_MAIN_WS", getenv("BSC_WS_URL", "wss://bsc-ws-node.nariox.org:443"))
-	mainHTTPURL := getenv("REPLAYER_MAIN_HTTP", getenv("BSC_HTTP_URL", "https://bsc-dataseed.binance.org"))
+// Run connects to source + fork and starts subscription + replay.
+func (r *TxReplayer) Run(ctx context.Context, forkURL string) error {
+	// source endpoints (generic first, then old BSC names)
+	srcWSURL := firstNonEmpty(
+		os.Getenv("REPLAYER_MAIN_WS"),
+		os.Getenv("SRC_WS_URL"),
+		os.Getenv("ETH_WS_URL"),
+		os.Getenv("BSC_WS_URL"),
+	)
+	if srcWSURL == "" {
+		return fmt.Errorf("source WS not set (set REPLAYER_MAIN_WS or BSC_WS_URL)")
+	}
 
-	// fork endpoint
-	forkURL := getenv("FORK_RPC_URL", "http://127.0.0.1:8545")
+	srcHTTPURL := firstNonEmpty(
+		os.Getenv("REPLAYER_MAIN_HTTP"),
+		os.Getenv("SRC_HTTP_URL"),
+		os.Getenv("ETH_HTTP_URL"),
+		os.Getenv("BSC_HTTP_URL"),
+	)
+	if srcHTTPURL == "" {
+		return fmt.Errorf("source HTTP not set (set REPLAYER_MAIN_HTTP or BSC_HTTP_URL)")
+	}
 
 	var err error
-	r.mainRPC, err = rpc.DialContext(ctx, mainHTTPURL)
+	// source HTTP/RPC
+	r.srcRPC, err = rpc.DialContext(ctx, srcHTTPURL)
 	if err != nil {
-		return fmt.Errorf("dial main http rpc: %w", err)
+		return fmt.Errorf("dial source http rpc: %w", err)
 	}
-	r.mainHTTP = ethclient.NewClient(r.mainRPC)
+	r.srcHTTP = ethclient.NewClient(r.srcRPC)
 
-	r.mainWS, err = ethclient.DialContext(ctx, mainWSURL)
+	// source WS
+	r.srcWS, err = ethclient.DialContext(ctx, srcWSURL)
 	if err != nil {
-		return fmt.Errorf("dial main ws: %w", err)
+		return fmt.Errorf("dial source ws: %w", err)
 	}
 
+	// fork endpoint (if not provided explicitly)
+	if forkURL == "" {
+		forkURL = getenv("FORK_RPC_URL", "http://127.0.0.1:8545")
+	}
+
+	// fork RPC/HTTP
 	r.forkRPC, err = rpc.DialContext(ctx, forkURL)
 	if err != nil {
 		return fmt.Errorf("dial fork rpc: %w", err)
 	}
 	r.forkHTTP = ethclient.NewClient(r.forkRPC)
 
-	// start replay worker
+	// start workers
 	go r.replayLoop(ctx)
-
-	// start single subscription for all targets
 	go r.subscribeTargets(ctx)
 
 	<-ctx.Done()
 	return ctx.Err()
 }
 
-// subscribeTargets subscribes logs from all target addresses.
+// subscribeTargets subscribes logs from all target addresses on source chain.
 func (r *TxReplayer) subscribeTargets(ctx context.Context) {
 	ch := make(chan types.Log, 256)
 	q := ethereum.FilterQuery{
 		Addresses: r.targets,
-		// no topics -> any event from those addresses
 	}
 	for {
-		sub, err := r.mainWS.SubscribeFilterLogs(ctx, q, ch)
+		sub, err := r.srcWS.SubscribeFilterLogs(ctx, q, ch)
 		if err != nil {
 			log.Printf("[replayer] subscribe error: %v", err)
 			time.Sleep(2 * time.Second)
@@ -132,7 +149,7 @@ func (r *TxReplayer) subscribeTargets(ctx context.Context) {
 				if lg.Removed {
 					continue
 				}
-				// fetch block time once here
+				// fetch on-chain timestamp for ordering
 				ts := r.fetchBlockTime(ctx, lg.BlockNumber)
 				r.evCh <- observedLog{
 					TxHash:      lg.TxHash,
@@ -151,7 +168,7 @@ func (r *TxReplayer) subscribeTargets(ctx context.Context) {
 	}
 }
 
-// replayLoop drains observed logs, sorts them by chain order, and replays the original txs.
+// replayLoop orders events and replays transactions to fork.
 func (r *TxReplayer) replayLoop(ctx context.Context) {
 	buf := make([]observedLog, 0, 256)
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -169,7 +186,7 @@ func (r *TxReplayer) replayLoop(ctx context.Context) {
 				continue
 			}
 
-			// sort by (block, tx, log)
+			// order by (block, tx, log)
 			sort.Slice(buf, func(i, j int) bool {
 				if buf[i].BlockNumber != buf[j].BlockNumber {
 					return buf[i].BlockNumber < buf[j].BlockNumber
@@ -181,7 +198,7 @@ func (r *TxReplayer) replayLoop(ctx context.Context) {
 			})
 
 			for _, ev := range buf {
-				// keep time gap roughly
+				// try to keep original time gap
 				if !lastTime.IsZero() && !ev.BlockTime.IsZero() {
 					delta := ev.BlockTime.Sub(lastTime)
 					if delta > 0 {
@@ -215,18 +232,18 @@ func (r *TxReplayer) replayLoop(ctx context.Context) {
 	}
 }
 
-// replayOne fetches the original tx from mainnet and re-sends it to fork by impersonating the sender.
+// replayOne fetches original tx from source and sends same call to fork.
 func (r *TxReplayer) replayOne(ctx context.Context, h common.Hash) error {
-	// 1) get original tx
-	tx, _, err := r.mainHTTP.TransactionByHash(ctx, h)
+	// fetch original tx
+	tx, _, err := r.srcHTTP.TransactionByHash(ctx, h)
 	if err != nil {
-		return fmt.Errorf("get main tx: %w", err)
+		return fmt.Errorf("get source tx: %w", err)
 	}
 
-	// 2) find sender from mainnet chainID
-	chainID, err := r.mainHTTP.NetworkID(ctx)
+	// recover sender from source chain
+	chainID, err := r.srcHTTP.NetworkID(ctx)
 	if err != nil {
-		return fmt.Errorf("main network id: %w", err)
+		return fmt.Errorf("source network id: %w", err)
 	}
 	signer := types.LatestSignerForChainID(chainID)
 	from, err := types.Sender(signer, tx)
@@ -234,49 +251,85 @@ func (r *TxReplayer) replayOne(ctx context.Context, h common.Hash) error {
 		return fmt.Errorf("decode sender: %w", err)
 	}
 
-	// 3) impersonate on fork (hardhat/anvil)
+	// impersonate sender on fork
 	if err := r.impersonate(ctx, from); err != nil {
 		return fmt.Errorf("impersonate: %w", err)
 	}
 
-	// 4) top up balance for this account
-	if err := r.setBalance(ctx, from, big.NewInt(0).Mul(big.NewInt(1e18), big.NewInt(100))); err != nil {
-		// not fatal
-		log.Printf("[replayer] setBalance warn: %v", err)
+	// ALWAYS fund from local rich account (not setBalance)
+	if err := r.fundAccount(ctx, from); err != nil {
+		// not fatal, but log it
+		log.Printf("[replayer] fund warn for %s: %v", from.Hex(), err)
 	}
 
-	// 5) get fork nonce
+	// get nonce on fork for that sender
 	nonce, err := r.forkHTTP.PendingNonceAt(ctx, from)
 	if err != nil {
 		return fmt.Errorf("fork nonce: %w", err)
 	}
 
-	// 6) gas price to use on fork
+	// get gas price
 	gp, err := r.forkHTTP.SuggestGasPrice(ctx)
 	if err != nil {
-		gp = big.NewInt(1_000_000_000) // 1 gwei fallback
+		gp = big.NewInt(1_000_000_000)
 	}
 
 	to := tx.To()
 	if to == nil {
-		// contract creation tx: skip
+		// contract creation, skip for now
 		return fmt.Errorf("tx is contract creation, skip")
 	}
 
-    callArgs := map[string]interface{}{
-        "from":     from.Hex(),
-        "to":       to.Hex(),
-        "gas":      hexutil.Uint64(tx.Gas()),
-        // hexutil.Big expects a value type, not *big.Int
-        "gasPrice": hexutil.Big(*gp),
-        "value":    hexutil.Big(*tx.Value()),
-        "data":     hexutil.Encode(tx.Data()),
-        "nonce":    hexutil.Uint64(nonce),
-    }
+	callArgs := map[string]interface{}{
+		"from":     from.Hex(),
+		"to":       to.Hex(),
+		"gas":      hexutil.Uint64(tx.Gas()),
+		"gasPrice": hexutil.Big(*gp),
+		"value":    hexutil.Big(*tx.Value()),
+		"data":     hexutil.Encode(tx.Data()),
+		"nonce":    hexutil.Uint64(nonce),
+	}
 
 	var result common.Hash
 	if err := r.forkRPC.CallContext(ctx, &result, "eth_sendTransaction", callArgs); err != nil {
 		return fmt.Errorf("fork send: %w", err)
+	}
+
+	return nil
+}
+
+// fundAccount sends some ETH/BNB from a local rich account to the target EOA.
+// This does NOT use hardhat_setBalance / anvil_setBalance to avoid "missing trie node" on pruned RPCs.
+func (r *TxReplayer) fundAccount(ctx context.Context, target common.Address) error {
+	// rich account is the local pre-funded account that the fork exposes
+	rich := getenv("FORK_RICH_ACCOUNT", "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+	richAddr := common.HexToAddress(rich)
+
+	// get nonce for rich account on fork
+	nonce, err := r.forkHTTP.PendingNonceAt(ctx, richAddr)
+	if err != nil {
+		return fmt.Errorf("fallback nonce from rich: %w", err)
+	}
+
+	// gas price
+	gp, err := r.forkHTTP.SuggestGasPrice(ctx)
+	if err != nil {
+		gp = big.NewInt(1_000_000_000)
+	}
+
+	// send 1 ETH/BNB equivalent
+	txArgs := map[string]interface{}{
+		"from":     richAddr.Hex(),
+		"to":       target.Hex(),
+		"value":    hexutil.EncodeBig(big.NewInt(1e18)), // 1 * 10^18
+		"gas":      hexutil.Uint64(21000),
+		"gasPrice": hexutil.Big(*gp),
+		"nonce":    hexutil.Uint64(nonce),
+	}
+
+	var txHash common.Hash
+	if err := r.forkRPC.CallContext(ctx, &txHash, "eth_sendTransaction", txArgs); err != nil {
+		return fmt.Errorf("rich transfer failed: %w", err)
 	}
 
 	return nil
@@ -295,21 +348,9 @@ func (r *TxReplayer) impersonate(ctx context.Context, addr common.Address) error
 	return nil
 }
 
-// setBalance funds account on fork.
-func (r *TxReplayer) setBalance(ctx context.Context, addr common.Address, wei *big.Int) error {
-	var out interface{}
-	hexBal := hexutil.EncodeBig(wei)
-	if err := r.forkRPC.CallContext(ctx, &out, "hardhat_setBalance", addr.Hex(), hexBal); err != nil {
-		if err2 := r.forkRPC.CallContext(ctx, &out, "anvil_setBalance", addr.Hex(), hexBal); err2 != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// fetchBlockTime fetches block timestamp on mainnet.
+// fetchBlockTime fetches block timestamp on source chain.
 func (r *TxReplayer) fetchBlockTime(ctx context.Context, num uint64) time.Time {
-	blk, err := r.mainHTTP.BlockByNumber(ctx, big.NewInt(int64(num)))
+	blk, err := r.srcHTTP.BlockByNumber(ctx, big.NewInt(int64(num)))
 	if err != nil || blk == nil {
 		return time.Time{}
 	}
@@ -336,10 +377,20 @@ func parseTargets(s string) ([]common.Address, error) {
 	return out, nil
 }
 
-// getenv returns env or default.
+// ---------- helpers ----------
+
 func getenv(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
 	}
 	return def
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
