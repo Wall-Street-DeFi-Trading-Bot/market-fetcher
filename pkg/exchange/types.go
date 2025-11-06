@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sujine/market-fetcher/publisher"
+	"github.com/sujine/market-fetcher/pkg/publisher"
 )
 
 // Collector is a long-running source that publishes market data via Publisher.

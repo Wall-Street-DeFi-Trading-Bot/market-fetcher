@@ -11,10 +11,10 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/sujine/market-fetcher/exchange"
-	"github.com/sujine/market-fetcher/internal/wsutil"
+	"github.com/sujine/market-fetcher/pkg/exchange"
+	"github.com/sujine/market-fetcher/pkg/internal/wsutil"
+	"github.com/sujine/market-fetcher/pkg/publisher"
 	pb "github.com/sujine/market-fetcher/proto"
-	"github.com/sujine/market-fetcher/publisher"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -39,9 +39,9 @@ type cexEvent struct {
 	bidSz, askSz  float64
 
 	// funding (markPrice)
-	mark, index  	float64
-	fundingRate      float64
-	nextFundMs       int64
+	mark, index float64
+	fundingRate float64
+	nextFundMs  int64
 
 	// volume snapshot (aggTrade 1s)
 	volBase, volQuote float64
@@ -119,7 +119,7 @@ func (c *Collector) Run(ctx context.Context) error {
 
 	fees := NewFeeStore(c.Symbol, c.Pub)
 
-    go fees.Start(ctx, pollEveryFor(c.Symbol))
+	go fees.Start(ctx, pollEveryFor(c.Symbol))
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -150,15 +150,14 @@ type aggTrade struct {
 }
 
 type markPrice struct {
-    EventType       string `json:"e"` 
-    EventTime       int64  `json:"E"`
-    Symbol          string `json:"s"` 
-    MarkPrice       string `json:"p"`
-    IndexPrice      string `json:"i"`
-    FundingRate     string `json:"r"`
-    NextFundingTime int64  `json:"T"` 
+	EventType       string `json:"e"`
+	EventTime       int64  `json:"E"`
+	Symbol          string `json:"s"`
+	MarkPrice       string `json:"p"`
+	IndexPrice      string `json:"i"`
+	FundingRate     string `json:"r"`
+	NextFundingTime int64  `json:"T"`
 }
-
 
 // ----------------- Generic WS loops -----------------
 
@@ -176,9 +175,9 @@ func (c *Collector) loopBook(ctx context.Context, url string, ins pb.Instrument)
 		bid, ask := f64(v.Bid), f64(v.Ask)
 		nowNs := time.Now().UnixNano()
 		c.publishPrice(&cexEvent{
-			ins:   ins,
-			tsNs:  nowNs,
-			bid:   bid, ask: ask, mid: 0.5 * (bid + ask),
+			ins:  ins,
+			tsNs: nowNs,
+			bid:  bid, ask: ask, mid: 0.5 * (bid + ask),
 			bidSz: f64(v.BidQty), askSz: f64(v.AskQty),
 		})
 	}, nil)
