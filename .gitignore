@@ -23,3 +23,5 @@ market-fetcher
 /logs
 
 /nats-data
+
+.gomodcache
