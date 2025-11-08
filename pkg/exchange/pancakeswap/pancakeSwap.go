@@ -16,9 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/sujine/market-fetcher/exchange"
+	"github.com/sujine/market-fetcher/pkg/exchange"
+	"github.com/sujine/market-fetcher/pkg/publisher"
 	pb "github.com/sujine/market-fetcher/proto"
-	"github.com/sujine/market-fetcher/publisher"
 )
 
 type poolVer uint8

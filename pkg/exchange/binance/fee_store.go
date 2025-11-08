@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sujine/market-fetcher/pkg/publisher"
 	pb "github.com/sujine/market-fetcher/proto"
-	"github.com/sujine/market-fetcher/publisher"
 )
 
 var qEscaper = regexp.MustCompile(`%20|\+`)
