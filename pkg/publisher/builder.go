@@ -20,15 +20,13 @@ func NewMarketDataBuilder(exchange, symbol string, venue pb.Venue, inst pb.Instr
 				Symbol:        symbol,
 				Venue:         venue,
 				Instrument:    inst,
-				TsNs:          time.Now().UnixNano(),
+				PublishTsNs:   time.Now().UnixNano(),
 				SchemaVersion: 2,
 				// Chain / PoolAddress are optional; set via helpers below if needed.
 			},
 		},
 	}
 }
-
-// ---------- Header helpers (optional) ----------
 
 // WithHeaderChain sets the chain name for DEX contexts (e.g., "BSC").
 func (b *MarketDataBuilder) WithHeaderChain(chain string) *MarketDataBuilder {
@@ -54,22 +52,28 @@ func (b *MarketDataBuilder) WithHeaderSchemaVersion(v uint32) *MarketDataBuilder
 	return b
 }
 
-// WithHeaderTimestamp overrides the event timestamp (ns).
-func (b *MarketDataBuilder) WithHeaderTimestamp(ns int64) *MarketDataBuilder {
+// WithHeaderTimestamp set source timestamp (ns).
+func (b *MarketDataBuilder) WithHeaderSourceTimestamp(ns int64) *MarketDataBuilder {
 	if b.evt != nil && b.evt.Header != nil {
-		b.evt.Header.TsNs = ns
+		b.evt.Header.SourceTsNs = ns
 	}
 	return b
 }
 
-// ---------- Existing payload helpers ----------
+// WithHeaderTimestamp set publish timestamp (ns).
+func (b *MarketDataBuilder) WithHeaderPublishTimestamp(ns int64) *MarketDataBuilder {
+	if b.evt != nil && b.evt.Header != nil {
+		b.evt.Header.PublishTsNs = ns
+	}
+	return b
+}
 
 func (b *MarketDataBuilder) WithTick(bid, ask, mid, bidSz, askSz, twap, liq float64) *MarketDataBuilder {
 	b.evt.Data = &pb.MarketData_Tick{
 		Tick: &pb.TickL1{
-			Bid:       bid,
-			Ask:       ask,
-			Mid:       mid,
+			Bid: bid,
+			Ask: ask,
+			Mid: mid,
 		},
 	}
 	return b
@@ -78,10 +82,10 @@ func (b *MarketDataBuilder) WithTick(bid, ask, mid, bidSz, askSz, twap, liq floa
 func (b *MarketDataBuilder) WithFunding(mark, index, rate float64, nextFund int64) *MarketDataBuilder {
 	b.evt.Data = &pb.MarketData_Funding{
 		Funding: &pb.Funding{
-			MarkPrice:            mark,
-			IndexPrice:           index,
-			FundingRate:          rate,
-			NextFundingTime:      nextFund,
+			MarkPrice:       mark,
+			IndexPrice:      index,
+			FundingRate:     rate,
+			NextFundingTime: nextFund,
 		},
 	}
 	return b
@@ -109,16 +113,14 @@ func (b *MarketDataBuilder) WithTrade(price, size float64, aggr pb.Aggressor) *M
 	return b
 }
 
-// ---------- NEW: Stats24h (거래량/고저/건수) ----------
-
 func (b *MarketDataBuilder) WithVolume(vol0, vol1, high, low float64, trades uint64) *MarketDataBuilder {
 	b.evt.Data = &pb.MarketData_Volume{
 		Volume: &pb.Volume{
-			Volume0:    vol0,
-			Volume1:    vol1,
-			High:        high,
-			Low:         low,
-			Trades:      trades,
+			Volume0: vol0,
+			Volume1: vol1,
+			High:    high,
+			Low:     low,
+			Trades:  trades,
 		},
 	}
 	return b
@@ -133,13 +135,12 @@ func (b *MarketDataBuilder) WithDexSwapL1(f *pb.DexSwapL1) *MarketDataBuilder {
 	return b
 }
 
-
 func (b *MarketDataBuilder) WithSlippage(impact01, impact10 float64, txHash string, blockNum uint64) *MarketDataBuilder {
 	b.evt.Data = &pb.MarketData_Slippage{
 		Slippage: &pb.Slippage{
-			ImpactBps01:     impact01,
-			ImpactBps10:  	 impact10,
-			TxHash: txHash,
+			ImpactBps01: impact01,
+			ImpactBps10: impact10,
+			TxHash:      txHash,
 			BlockNumber: blockNum,
 		},
 	}
