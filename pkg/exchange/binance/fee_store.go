@@ -22,7 +22,6 @@ import (
 
 var qEscaper = regexp.MustCompile(`%20|\+`)
 
-// ---------- FeeStore: refresh spot/perp fees via REST polling & publish ----------
 type FeeStore struct {
 	Symbol string
 	Pub    publisher.Nats
@@ -144,13 +143,19 @@ func (fs *FeeStore) fetchAndPublishSpot(ctx context.Context) {
 		fmt.Printf("[fee_store:%s] spot fee update maker=%.8f taker=%.8f\n", fs.Symbol, maker, taker)
 	}
 
+	// 원본 시각: Binance 서버 시각 (offset 적용)
+	srcMs := fs.nowMs()
+	srcNs := srcMs * int64(time.Millisecond)
+	pubNs := time.Now().UnixNano()
+
 	evt := publisher.NewMarketDataBuilder(
 		"Binance", fs.Symbol, pb.Venue_VENUE_CEX, pb.Instrument_INSTRUMENT_SPOT,
 	).WithFee(maker, taker).Build()
 	if evt.Header == nil {
 		evt.Header = &pb.Header{}
 	}
-	evt.Header.TsNs = time.Now().UnixNano()
+	evt.Header.SourceTsNs = srcNs
+	evt.Header.PublishTsNs = pubNs
 	_ = fs.Pub.Publish(evt)
 }
 
@@ -169,17 +174,22 @@ func (fs *FeeStore) fetchAndPublishPerp(ctx context.Context) {
 		fmt.Printf("[fee_store:%s] perp fee update maker=%.8f taker=%.8f\n", fs.Symbol, maker, taker)
 	}
 
+	// 원본 시각: Binance 서버 시각 (offset 적용)
+	srcMs := fs.nowMs()
+	srcNs := srcMs * int64(time.Millisecond)
+	pubNs := time.Now().UnixNano()
+
 	evt := publisher.NewMarketDataBuilder(
 		"Binance", fs.Symbol, pb.Venue_VENUE_CEX, pb.Instrument_INSTRUMENT_PERPETUAL,
 	).WithFee(maker, taker).Build()
 	if evt.Header == nil {
 		evt.Header = &pb.Header{}
 	}
-	evt.Header.TsNs = time.Now().UnixNano()
+	evt.Header.SourceTsNs = srcNs
+	evt.Header.PublishTsNs = pubNs
 	_ = fs.Pub.Publish(evt)
 }
 
-// ---------- Public getters (usable for internal estimations) ----------
 func (fs *FeeStore) Spot() (maker, taker float64) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -190,8 +200,6 @@ func (fs *FeeStore) Perp() (maker, taker float64) {
 	defer fs.mu.RUnlock()
 	return fs.perpMaker, fs.perpTaker
 }
-
-// ---------- REST calls (signature required) ----------
 
 // Spot: GET /sapi/v1/asset/tradeFee?symbol=SYMBOL&timestamp=...&recvWindow=...
 type spotFeeResp struct {
@@ -359,7 +367,6 @@ func (fs *FeeStore) syncServerTime(ctx context.Context) int64 {
 	return v.ServerTime - time.Now().UnixMilli()
 }
 
-// ---------- Small helpers ----------
 func atof(s string) float64 {
 	f, _ := strconv.ParseFloat(s, 64)
 	return f

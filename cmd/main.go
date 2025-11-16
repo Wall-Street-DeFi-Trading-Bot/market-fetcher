@@ -25,7 +25,6 @@ import (
 	pub "github.com/sujine/market-fetcher/pkg/publisher/nats"
 )
 
-// ------------------------ loggers ------------------------
 var (
 	sysLog *log.Logger // stdout (lifecycle only)
 	pubLog *log.Logger // file only (publish events)
@@ -48,8 +47,6 @@ func setupPublishLogger() {
 	pubLog = log.New(f, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 }
 
-// ----------------------------- config helpers -----------------------------
-
 func getEnv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -67,8 +64,6 @@ func splitCSV(s string) []string {
 	}
 	return out
 }
-
-// ----------------------------- admin protocol ----------------------------
 
 const (
 	adminReqSubject = "mf.admin.req"
@@ -96,8 +91,6 @@ func (s adminStatus) String() string {
 		s.Running, s.NumCollectors, s.Exchanges, s.Symbols, start, s.UptimeSec, s.Logging,
 	)
 }
-
-// ----------------------------- process state -----------------------------
 
 type service struct {
 	nc         *nats.Conn
@@ -222,8 +215,6 @@ func (s *service) startAdminResponder(ctx context.Context, exchanges, symbols []
 	return nil
 }
 
-// ----------------------------- publish sniffer -----------------------------
-
 func startPublishSniffer(nc *nats.Conn) (func(), error) {
 	subs := make([]*nats.Subscription, 0, 3)
 	handler := func(msg *nats.Msg) {
@@ -273,8 +264,6 @@ func startPublishSniffer(nc *nats.Conn) (func(), error) {
 	return cleanup, nil
 }
 
-// ----------------------------- CLI printing ------------------------------
-
 func printHelp() {
 	fmt.Println(`market-fetcher
 
@@ -293,8 +282,6 @@ Environment:
   LOG_PUBLISH_ENABLE   (default: true)                    # "false" to start with logging off
 `)
 }
-
-// --------------------------------- main ----------------------------------
 
 func main() {
 	_ = godotenv.Load()
@@ -380,7 +367,6 @@ func main() {
 		os.Exit(2)
 	}
 
-	// ---------------------- start service ----------------------
 	exchanges := splitCSV(getEnv("EXCHANGES", "binance"))
 	symbols := splitCSV(getEnv("SYMBOLS", "ETHUSDT"))
 

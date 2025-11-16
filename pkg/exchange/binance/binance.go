@@ -1,4 +1,3 @@
-// package: binance
 package binance
 
 import (
@@ -31,8 +30,9 @@ const (
 
 // cexEvent carries parsed fields before publishing.
 type cexEvent struct {
-	ins  pb.Instrument
-	tsNs int64
+	ins         pb.Instrument
+	sourceTsNs  int64
+	publishTsNs int64
 
 	// price (bookTicker)
 	bid, ask, mid float64
@@ -124,8 +124,6 @@ func (c *Collector) Run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// ----------------- WS payload structs -----------------
-
 type bookTicker struct {
 	Symbol string `json:"s"`
 	Bid    string `json:"b"`
@@ -159,8 +157,6 @@ type markPrice struct {
 	NextFundingTime int64  `json:"T"`
 }
 
-// ----------------- Generic WS loops -----------------
-
 // loopBook consumes bookTicker and publishes best bid/ask.
 func (c *Collector) loopBook(ctx context.Context, url string, ins pb.Instrument) {
 	wsutil.Run(ctx, url, func(b []byte) {
@@ -175,9 +171,10 @@ func (c *Collector) loopBook(ctx context.Context, url string, ins pb.Instrument)
 		bid, ask := f64(v.Bid), f64(v.Ask)
 		nowNs := time.Now().UnixNano()
 		c.publishPrice(&cexEvent{
-			ins:  ins,
-			tsNs: nowNs,
-			bid:  bid, ask: ask, mid: 0.5 * (bid + ask),
+			ins:         ins,
+			sourceTsNs:  nowNs,
+			publishTsNs: nowNs,
+			bid:         bid, ask: ask, mid: 0.5 * (bid + ask),
 			bidSz: f64(v.BidQty), askSz: f64(v.AskQty),
 		})
 	}, nil)
@@ -198,15 +195,18 @@ func (c *Collector) loopAggTrades(ctx context.Context, url string, ins pb.Instru
 		qty := f64(v.Qty)
 
 		if snap, ok := a.add(price, qty, sec); ok {
-			// Use the snapshot's second for the timestamp to be exact.
+			srcNs := time.Unix(snap.sec, 0).UnixNano()
+			pubNs := time.Now().UnixNano()
+
 			c.publishVolume(&cexEvent{
-				ins:      ins,
-				tsNs:     time.Unix(snap.sec, 0).UnixNano(),
-				volBase:  snap.volBase,
-				volQuote: snap.volQuote,
-				high:     snap.high,
-				low:      snap.low,
-				trades:   snap.trades,
+				ins:         ins,
+				sourceTsNs:  srcNs, // 1초 bucket의 기준 시각
+				publishTsNs: pubNs,
+				volBase:     snap.volBase,
+				volQuote:    snap.volQuote,
+				high:        snap.high,
+				low:         snap.low,
+				trades:      snap.trades,
 			})
 		}
 	}, nil)
@@ -223,10 +223,13 @@ func (c *Collector) loopMark(ctx context.Context, url string, ins pb.Instrument)
 			fmt.Println(json.Unmarshal(b, v))
 			return
 		}
-		nowNs := time.Now().UnixNano()
+		srcNs := time.UnixMilli(v.EventTime).UnixNano()
+		pubNs := time.Now().UnixNano()
+
 		c.publishFunding(&cexEvent{
 			ins:         ins,
-			tsNs:        nowNs,
+			sourceTsNs:  srcNs,
+			publishTsNs: pubNs,
 			mark:        f64(v.MarkPrice),
 			index:       f64(v.IndexPrice),
 			fundingRate: f64(v.FundingRate),
@@ -234,8 +237,6 @@ func (c *Collector) loopMark(ctx context.Context, url string, ins pb.Instrument)
 		})
 	}, nil)
 }
-
-// ----------------- Periodic tasks -----------------
 
 func (c *Collector) republishFees(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
@@ -246,13 +247,19 @@ func (c *Collector) republishFees(ctx context.Context, every time.Duration) {
 			return
 		case <-t.C:
 			now := time.Now().UnixNano()
-			c.publishFee(&cexEvent{ins: pb.Instrument_INSTRUMENT_SPOT, tsNs: now})
-			c.publishFee(&cexEvent{ins: pb.Instrument_INSTRUMENT_PERPETUAL, tsNs: now})
+			c.publishFee(&cexEvent{
+				ins:         pb.Instrument_INSTRUMENT_SPOT,
+				sourceTsNs:  now,
+				publishTsNs: now,
+			})
+			c.publishFee(&cexEvent{
+				ins:         pb.Instrument_INSTRUMENT_PERPETUAL,
+				sourceTsNs:  now,
+				publishTsNs: now,
+			})
 		}
 	}
 }
-
-// ----------------- Publishers -----------------
 
 func (c *Collector) publishPrice(ps *cexEvent) {
 	evt := publisher.NewMarketDataBuilder(
@@ -262,7 +269,8 @@ func (c *Collector) publishPrice(ps *cexEvent) {
 	if evt.Header == nil {
 		evt.Header = &pb.Header{}
 	}
-	evt.Header.TsNs = ps.tsNs
+	evt.Header.SourceTsNs = ps.sourceTsNs
+	evt.Header.PublishTsNs = ps.publishTsNs
 	_ = c.Pub.Publish(evt)
 }
 
@@ -274,7 +282,8 @@ func (c *Collector) publishFunding(ps *cexEvent) {
 	if evt.Header == nil {
 		evt.Header = &pb.Header{}
 	}
-	evt.Header.TsNs = ps.tsNs
+	evt.Header.SourceTsNs = ps.sourceTsNs
+	evt.Header.PublishTsNs = ps.publishTsNs
 	_ = c.Pub.Publish(evt)
 }
 
@@ -285,7 +294,8 @@ func (c *Collector) publishVolume(ps *cexEvent) {
 			Symbol:        c.Symbol,
 			Venue:         pb.Venue_VENUE_CEX,
 			Instrument:    ps.ins,
-			TsNs:          ps.tsNs,
+			SourceTsNs:    ps.sourceTsNs,
+			PublishTsNs:   ps.publishTsNs,
 			SchemaVersion: 1,
 		},
 		Data: &pb.MarketData_Volume{
@@ -313,11 +323,10 @@ func (c *Collector) publishFee(ps *cexEvent) {
 	if evt.Header == nil {
 		evt.Header = &pb.Header{}
 	}
-	evt.Header.TsNs = ps.tsNs
+	evt.Header.SourceTsNs = ps.sourceTsNs
+	evt.Header.PublishTsNs = ps.publishTsNs
 	_ = c.Pub.Publish(evt)
 }
-
-// ----------------- Volume aggregator -----------------
 
 type volAgg struct {
 	mu       sync.Mutex
@@ -379,8 +388,6 @@ func (a *volAgg) add(price, qty float64, sec int64) (volSnap, bool) {
 	a.trades++
 	return volSnap{}, false
 }
-
-// ----------------- utils & registration -----------------
 
 func f64(s string) float64 {
 	v, _ := strconv.ParseFloat(s, 64)

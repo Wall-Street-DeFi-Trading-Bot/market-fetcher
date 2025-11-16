@@ -38,7 +38,6 @@ type poolRef struct {
 	fee     uint32
 }
 
-// --------- Collector ---------
 type Collector struct {
 	Symbol string
 	Pub    publisher.Nats
@@ -193,6 +192,8 @@ type swapEvent struct {
 	a0In, a1In     *big.Int
 	a0Out, a1Out   *big.Int
 	slippageBps    float64
+
+	sourceTsNs int64
 }
 
 func (c *Collector) Connect(ctx context.Context, wsURL, httpURL string) error {
@@ -271,15 +272,11 @@ func (c *Collector) publishPrice(ps *swapEvent) {
 		tick = 0
 	}
 
-	// on-chain time
-	onchainSec := c.getBlockTimeSec(ps.blockNum)
-	onchainNs := int64(onchainSec) * int64(time.Second)
-
 	evt := publisher.NewMarketDataBuilder(
 		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
 	).WithHeaderChain("BSC").
 		WithHeaderPoolAddress(ps.pool.Hex()).
-		WithHeaderTimestamp(onchainNs).
+		WithHeaderSourceTimestamp(ps.sourceTsNs).
 		WithDexSwapL1(&pb.DexSwapL1{
 			Amount0:        toStr(ps.amount0),
 			Amount1:        toStr(ps.amount1),
@@ -324,7 +321,7 @@ func (c *Collector) publishVolume(ps *swapEvent) {
 		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
 	).WithHeaderChain("BSC").
 		WithHeaderPoolAddress(ps.pool.Hex()).
-		WithHeaderTimestamp(onchainNs).
+		WithHeaderSourceTimestamp(onchainNs).
 		WithVolume(vol0, vol1, 0, 0, 0).
 		Build()
 
@@ -342,15 +339,11 @@ func (c *Collector) publishFee(ps *swapEvent) {
 	pf := c.pools[ps.pool].fee
 	c.mu.RUnlock()
 
-	// on-chain time
-	onchainSec := c.getBlockTimeSec(ps.blockNum)
-	onchainNs := int64(onchainSec) * int64(time.Second)
-
 	evt := publisher.NewMarketDataBuilder(
 		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
 	).WithHeaderChain("BSC").
 		WithHeaderPoolAddress(ps.pool.Hex()).
-		WithHeaderTimestamp(onchainNs).
+		WithHeaderSourceTimestamp(ps.sourceTsNs).
 		WithFee(0.0, float64(pf)/1e6).
 		Build()
 
@@ -379,15 +372,11 @@ func (c *Collector) publishSlippage(ps *swapEvent) {
 		}
 	}
 
-	// on-chain time
-	onchainSec := c.getBlockTimeSec(ps.blockNum)
-	onchainNs := int64(onchainSec) * int64(time.Second)
-
 	evt := publisher.NewMarketDataBuilder(
 		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
 	).WithHeaderChain("BSC").
 		WithHeaderPoolAddress(ps.pool.Hex()).
-		WithHeaderTimestamp(onchainNs).
+		WithHeaderSourceTimestamp(ps.sourceTsNs).
 		WithSlippage(impactBps01, impactBps10, ps.txHash.Hex(), ps.blockNum).
 		Build()
 
@@ -395,8 +384,6 @@ func (c *Collector) publishSlippage(ps *swapEvent) {
 		log.Printf("[%s] publish slippage failed: %v", c.Name(), err)
 	}
 }
-
-// --------- subscribe & event handling ---------
 
 func (c *Collector) subscribePoolWith(ctx context.Context, pr poolRef, handler func(types.Log, poolRef)) {
 	ch := make(chan types.Log, 256)
@@ -517,6 +504,13 @@ func (c *Collector) onSwapEvent(ctx context.Context, lg types.Log, pr poolRef) {
 	ps, ok := c.parseSwap(ctx, lg, pr)
 	if !ok {
 		return
+	}
+
+	onchainSec := c.getBlockTimeSec(ps.blockNum)
+	if onchainSec != 0 {
+		ps.sourceTsNs = int64(onchainSec) * int64(time.Second) // sec → ns
+	} else {
+		ps.sourceTsNs = 0
 	}
 
 	switch pr.ver {
