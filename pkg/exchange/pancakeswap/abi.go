@@ -1,6 +1,5 @@
 package pancakeswap
 
-
 const pool3ABIJSON = `[
   {
     "inputs": [],
@@ -56,7 +55,6 @@ const pool3ABIJSON = `[
   }
 ]`
 
-
 const pool2ABIJSON = `[
   {
     "anonymous": false,
@@ -98,7 +96,6 @@ const pancakeV3FactoryABI = `[
    "outputs":[{"internalType":"address","name":"pool","type":"address"}],
    "stateMutability":"view","type":"function"}
 ]`
-
 
 // Multicall3 aggregate3 전용 최소 ABI
 const multicallABIJSON = `[
@@ -148,7 +145,6 @@ const factoryABIJSON = `[
   }
 ]`
 
-
 const v2PairABIJSON = `[
   {
     "anonymous": false,
@@ -159,4 +155,3 @@ const v2PairABIJSON = `[
     "name": "Sync", "type": "event"
   }
 ]`
-

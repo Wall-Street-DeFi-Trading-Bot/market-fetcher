@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -116,7 +117,7 @@ func (c *Collector) Name() string  { return "PancakeSwap(" + c.Symbol + ")" }
 func (c *Collector) Venue() string { return "dex" }
 
 func (c *Collector) Run(ctx context.Context) error {
-	if err := c.Connect(ctx, envStr("BSC_WS_URL", DEFAULT_BSC_WS_URL), envStr("BSC_HTTP_URL", DEFAULT_BSC_HTTP)); err != nil {
+	if err := c.Connect(ctx, envStr("BSC_WS_URL", DefaultBSCWSURL), envStr("BSC_HTTP_URL", DefaultBSCHTTP)); err != nil {
 		return err
 	}
 	defer c.Close()
@@ -255,8 +256,8 @@ func (c *Collector) publishPrice(ps *swapEvent) {
 	}
 	d0 := c.token0Decimals
 	d1 := c.token1Decimals
-	token0Sym := ADDR_TO_SYMBOL[c.token0.Hex()]
-	token1Sym := ADDR_TO_SYMBOL[c.token1.Hex()]
+	token0Sym := AddressToSymbol[strings.ToLower(c.token0.Hex())]
+	token1Sym := AddressToSymbol[strings.ToLower(c.token1.Hex())]
 	c.mu.RUnlock()
 
 	var sqrtP, liq string
@@ -313,15 +314,11 @@ func (c *Collector) publishVolume(ps *swapEvent) {
 	vol0 := absFloat(intToFloat(ps.amount0, d0))
 	vol1 := absFloat(intToFloat(ps.amount1, d1))
 
-	// on-chain time
-	onchainSec := c.getBlockTimeSec(ps.blockNum)
-	onchainNs := int64(onchainSec) * int64(time.Second)
-
 	evt := publisher.NewMarketDataBuilder(
 		ex, c.Symbol, pb.Venue_VENUE_DEX, pb.Instrument_INSTRUMENT_SWAP,
 	).WithHeaderChain("BSC").
 		WithHeaderPoolAddress(ps.pool.Hex()).
-		WithHeaderSourceTimestamp(onchainNs).
+		WithHeaderSourceTimestamp(ps.sourceTsNs).
 		WithVolume(vol0, vol1, 0, 0, 0).
 		Build()
 
@@ -506,13 +503,6 @@ func (c *Collector) onSwapEvent(ctx context.Context, lg types.Log, pr poolRef) {
 		return
 	}
 
-	onchainSec := c.getBlockTimeSec(ps.blockNum)
-	if onchainSec != 0 {
-		ps.sourceTsNs = int64(onchainSec) * int64(time.Second) // sec → ns
-	} else {
-		ps.sourceTsNs = 0
-	}
-
 	switch pr.ver {
 	case verV3:
 		ps.dir = detectDirV3(ps)
@@ -566,6 +556,12 @@ func (c *Collector) onSwapEvent(ctx context.Context, lg types.Log, pr poolRef) {
 		}
 	}
 
+	onchainSec := c.getBlockTimeSec(ps.blockNum)
+	if onchainSec != 0 {
+		ps.sourceTsNs = int64(onchainSec) * int64(time.Second) // sec → ns
+	} else {
+		ps.sourceTsNs = 0
+	}
 	c.publishPrice(ps)
 	c.publishVolume(ps)
 	c.publishFee(ps)
@@ -629,7 +625,7 @@ func v2TradePrice(amt0, amt1, a0In, a1In, a0Out, a1Out *big.Int, d0, d1 int) (pr
 }
 
 func (c *Collector) setupTokenInfo() error {
-	t0, t1, d0, d1, ok := getTokenInfoForSymbol(c.Symbol)
+	t0, t1, d0, d1, ok := GetTokenInfoForSymbol(c.Symbol)
 	if !ok {
 		return fmt.Errorf("unsupported symbol: %s", c.Symbol)
 	}
@@ -683,11 +679,40 @@ func (c *Collector) execPreFeeFromLegs(ps *swapEvent) (p01, p10 float64) {
 }
 
 func (c *Collector) loadPools(ctx context.Context) map[common.Address]poolRef {
-	v3, v2 := envPoolsForSymbolV3V2(c.Symbol)
-	out := make(map[common.Address]poolRef, len(v3)+len(v2))
+	out := make(map[common.Address]poolRef)
 
-	for _, a := range v3 {
+	// choose caller (prefer HTTP, fallback to WS)
+	var caller bind.ContractCaller
+	if c.http != nil {
+		caller = c.http
+	} else {
+		caller = c.ws
+	}
+	if caller == nil {
+		log.Printf("[%s] no eth client available for factory calls", c.Name())
+		return out
+	}
+
+	v2Fac, err := newOnChainV2Factory(caller)
+	if err != nil {
+		log.Printf("[%s] v2 factory init failed: %v", c.Name(), err)
+		v2Fac = nil
+	}
+	v3Fac, err := newOnChainV3Factory(caller)
+	if err != nil {
+		log.Printf("[%s] v3 factory init failed: %v", c.Name(), err)
+		v3Fac = nil
+	}
+
+	v3Pools, v2Pools, err := PoolsForSymbolV3V2(ctx, c.Symbol, v3Fac, v2Fac)
+	if err != nil {
+		log.Printf("[%s] resolve pools for %s failed: %v", c.Name(), c.Symbol, err)
+	}
+
+	// v3 pools: also fetch fee() from pool
+	for _, a := range v3Pools {
 		var feeU32 uint32
+
 		if data, err := c.v3PoolABI.Pack("fee"); err == nil {
 			if res, err := c.ws.CallContract(ctx, ethereum.CallMsg{To: &a, Data: data}, nil); err == nil {
 				if outVals, err := c.v3PoolABI.Unpack("fee", res); err == nil && len(outVals) > 0 {
@@ -715,7 +740,8 @@ func (c *Collector) loadPools(ctx context.Context) map[common.Address]poolRef {
 		c.mu.Unlock()
 	}
 
-	for _, a := range v2 {
+	// v2 pools
+	for _, a := range v2Pools {
 		out[a] = poolRef{
 			addr:    a,
 			ver:     verV2,

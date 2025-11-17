@@ -36,14 +36,9 @@ Create a `.env` file in the project root. Below is a sample configuration:
 ```env
 BINANCE_API_KEY=YOUR_API_KEY        # Enable Reading + Enable Futures
 BINANCE_API_SECRET=YOUR_API_SECRET
-BINANCE_FEE_POLL=40        # Binanace Fee polling time (s)
+BINANCE_FEE_POLL=40                 # Binanace Fee polling time (s)
 
 BSC_WS_URL=wss://<YOUR_API_DOMAIN>/v2/<YOUR_API_KEY>
-
-DEX_POOLS_WBNBUSDT=v2@0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae,v3@0x36696169C63e42cd08ce11f5deeBbCeBae652050,
-DEX_POOLS_WBNBCAKE=v2@0x0eD7e52944161450477ee417DE9Cd3a859b14fD0,v3@0x133B3D95bAD5405d14d53473671200e9342896BF,
-DEX_POOLS_WBNBETH=v2@0x74e4716e431f45807dcf19f284c7aa99f18a4fbc,v3@0xd0e226f674bbf064f54ab47f42473ff80db98cba,
-DEX_POOLS_USDCUSDT=v3@0x92b7807bF19b7DDdf89b706143896d05228f3121,v3@0x4f31Fa980a675570939B737Ebdde0471a4Be40Eb,
 
 NATS_URL=nats://127.0.0.1:4222
 
@@ -53,7 +48,7 @@ EXCHANGES=binance,pancakeswap  # enable both if needed
 # EXCHANGES=binance
 
 # Symbols per exchange
-DEX_SYMBOLS=WBNBUSDT,WBNBETH,WBNBCAKE,USDCUSDT
+DEX_SYMBOLS=WBNBUSDT,CAKEUSDT,CAKEWBNB,TWTWBNB,USDTWBNB,USDTBTCB,SFPWBNB
 BINANCE_SYMBOLS=BTCUSDT,ETHUSDT
 
 LOG_PUBLISH_ENABLE=false
@@ -66,17 +61,21 @@ Helpful resources for pool discovery:
 
 - PancakeSwap V3 pairs: https://pancakeswap.finance/info/v3/pairs
 - PancakeSwap V2 pairs: https://pancakeswap.finance/info/v2/pairs?chainName=v2&chain=bsc
-- Supported address list:
-  | Pair | Version | Fee | Address |
-  | --------- | :-----: | :---: | --------------------------------------------- |
-  | WBNB/CAKE | V2 | 0.25% | `0x0eD7e52944161450477ee417DE9Cd3a859b14fD0` |
-  | | V3 | 0.25% | `0x133B3D95bAD5405d14d53473671200e9342896BF` |
-  | WBNB/ETH | V2 | 0.25% | `0x74e4716e431f45807dcf19f284c7a99f18a4fbc` |
-  | | V3 | 0.05% | `0xd0e226f674bbf064f54ab47f42473ff80db98cba` |
-  | WBNB/USDT | V2 | 0.25% | `0x16b9a82891338f9ba80e2d6970fdda79d1eb0dae` |
-  | | V3 | 0.01% | `0x36696169C63e42c0d08ce11f5deeBbCeBae652050` |
-  | USDC/USDT | V3 | 0.01% | `0x92b7807bF19b7DDf898b706143896d05228f3121` |
-  | | V3 | 0.05% | `0x4f31Fa980a675570939B737Ebdd e0471a4Be40Eb` |
+
+Example
+| Pair | Version | Fee | Address |
+| --------- | :-----: | :---: | --------------------------------------------- |
+| CAKE/USDT | V3 | 0.05% | `0x8ec186cD1Ad51c380Bd23fDe29f852226647616c` |
+| CAKE/WBNB | V2 | 0.25% | `0x0eD7e52944161450477ee417DE9Cd3a859b14fD0` |
+| | V3 | 0.25% | `0x133B3D95bAD5405d14d53473671200e9342896BF` |
+| TWT/WBNB | V2 | 0.25% | `0x3DcB1787a95D2ea0Eb7d00887704EeBF0D79bb13` |
+| | V3 | 0.25% | `0x8cCB4544b3030dACF3d4D71C658f04e8688e25b1` |
+| USDT/WBNB | V2 | 0.25% | `0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE` |
+| | V3 | 0.05% | `0x36696169C63e42cd08ce11f5deeBbCeBae652050` |
+| USDT/BTCB | V2 | 0.25% | `0x`|
+| | V3 | 0.05% |`0x46Cf1cF8c69595804ba91dFdd8d6b960c9B0a7C4`|
+| SFP/WBNB | V2 | 0.25% |`0x942b294e59a8c47a0F7F20DF105B082710F7C305`|
+| | V3 | 0.25% |`0x64ebB904e169cB94e9788FcB68283B4C894ED881` |
 
 ## 5. Run the Server
 
