@@ -60,7 +60,7 @@ Helpful resources for pool discovery:
 - PancakeSwap V3 pairs: https://pancakeswap.finance/info/v3/pairs
 - PancakeSwap V2 pairs: https://pancakeswap.finance/info/v2/pairs?chainName=v2&chain=bsc
 
-Example
+Support Pair List
 | Pair | Version | Fee | Address |
 | --------- | :-----: | :---: | --------------------------------------------- |
 | CAKE/USDT | V3 | 0.05% | `0x8ec186cD1Ad51c380Bd23fDe29f852226647616c` |
