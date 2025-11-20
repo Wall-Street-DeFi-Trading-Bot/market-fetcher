@@ -44,8 +44,6 @@ NATS_URL=nats://127.0.0.1:4222
 
 # Collectors to run (comma-separated)
 EXCHANGES=binance,pancakeswap  # enable both if needed
-# EXCHANGES=pancakeswap
-# EXCHANGES=binance
 
 # Symbols per exchange
 DEX_SYMBOLS=WBNBUSDT,CAKEUSDT,CAKEWBNB,TWTWBNB,USDTWBNB,USDTBTCB,SFPWBNB
@@ -62,7 +60,7 @@ Helpful resources for pool discovery:
 - PancakeSwap V3 pairs: https://pancakeswap.finance/info/v3/pairs
 - PancakeSwap V2 pairs: https://pancakeswap.finance/info/v2/pairs?chainName=v2&chain=bsc
 
-Example
+Support Pair List
 | Pair | Version | Fee | Address |
 | --------- | :-----: | :---: | --------------------------------------------- |
 | CAKE/USDT | V3 | 0.05% | `0x8ec186cD1Ad51c380Bd23fDe29f852226647616c` |
@@ -72,7 +70,7 @@ Example
 | | V3 | 0.25% | `0x8cCB4544b3030dACF3d4D71C658f04e8688e25b1` |
 | USDT/WBNB | V2 | 0.25% | `0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE` |
 | | V3 | 0.05% | `0x36696169C63e42cd08ce11f5deeBbCeBae652050` |
-| USDT/BTCB | V2 | 0.25% | `0x`|
+| USDT/BTCB | V2 | 0.25% | `0x3F803EC2b816Ea7F06EC76aA2B6f2532F9892d62`|
 | | V3 | 0.05% |`0x46Cf1cF8c69595804ba91dFdd8d6b960c9B0a7C4`|
 | SFP/WBNB | V2 | 0.25% |`0x942b294e59a8c47a0F7F20DF105B082710F7C305`|
 | | V3 | 0.25% |`0x64ebB904e169cB94e9788FcB68283B4C894ED881` |
