@@ -72,7 +72,6 @@ var PairBySymbol = map[string]PairInfo{
 	"CAKEUSDT": {BaseSymbol: "CAKE", QuoteSymbol: "USDT", BaseDecimals: 18, QuoteDecimals: 18},
 
 	// CAKE / WBNB (V2 0.25%, V3 0.25%)
-	// NOTE: WBNBCAKE / BNBCAKE already exist (base=WBNB). Here는 CAKE를 base로 쓰고 싶을 때 사용.
 	"CAKEWBNB": {BaseSymbol: "CAKE", QuoteSymbol: "WBNB", BaseDecimals: 18, QuoteDecimals: 18},
 
 	// TWT / WBNB (V2 0.25%, V3 0.25%)

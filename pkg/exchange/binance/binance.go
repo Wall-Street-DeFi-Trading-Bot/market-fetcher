@@ -23,9 +23,6 @@ const (
 	defSpotTaker = 0.0010
 	defPerpMaker = 0.0002 // 0.02%
 	defPerpTaker = 0.0004 // 0.04%
-
-	defaultRecvWindow = "30000"
-	defaultPoll       = 60 * time.Second
 )
 
 // cexEvent carries parsed fields before publishing.
@@ -200,7 +197,7 @@ func (c *Collector) loopAggTrades(ctx context.Context, url string, ins pb.Instru
 
 			c.publishVolume(&cexEvent{
 				ins:         ins,
-				sourceTsNs:  srcNs, // 1초 bucket의 기준 시각
+				sourceTsNs:  srcNs,
 				publishTsNs: pubNs,
 				volBase:     snap.volBase,
 				volQuote:    snap.volQuote,
